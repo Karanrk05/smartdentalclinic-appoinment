@@ -1,0 +1,33 @@
+<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="top-curve" d="M 28 100 A 72 72 0 0 1 172 100" fill="none" />
+    <path id="bottom-curve" d="M 166 100 A 66 66 0 0 1 34 100" fill="none" />
+    <linearGradient id="blueRing" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#00b4d8" />
+      <stop offset="50%" stopColor="#0096c7" />
+      <stop offset="100%" stopColor="#0077b6" />
+    </linearGradient>
+    <linearGradient id="toothBlue" x1="60" y1="60" x2="140" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#0096c7" />
+      <stop offset="100%" stopColor="#023e8a" />
+    </linearGradient>
+    <linearGradient id="toothGreen" x1="50" y1="100" x2="140" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#00d2b4" />
+      <stop offset="100%" stopColor="#00b894" />
+    </linearGradient>
+  </defs>
+  <circle cx="100" cy="100" r="95" fill="url(#blueRing)" />
+  <text fill="#ffffff" font-size="14.5" font-weight="900" letter-spacing="2.8px" font-family="system-ui, sans-serif">
+    <textPath href="#top-curve" startOffset="50%" textAnchor="middle">SMART DENTAL CLINIC</textPath>
+  </text>
+  <text fill="#ffffff" font-size="14" font-weight="900" letter-spacing="3.2px" font-family="system-ui, sans-serif">
+    <textPath href="#bottom-curve" startOffset="50%" textAnchor="middle">SMILE WITH US</textPath>
+  </text>
+  <circle cx="100" cy="100" r="62" fill="#ffffff" />
+  <path d="M 68 76 C 74 70, 85 70, 92 75 C 97 78, 103 78, 108 75 C 115 70, 126 70, 132 76 C 138 82, 142 90, 137 101 C 131 113, 115 120, 96 123 C 80 125, 68 119, 64 109 C 59 96, 62 82, 68 76 Z" fill="url(#toothBlue)" />
+  <path d="M 72 82 C 82 76, 92 82, 100 87 C 110 93, 124 94, 135 88 C 132 94, 126 100, 118 103 C 104 107, 90 105, 78 98 C 74 94, 72 88, 72 82 Z" fill="#ffffff" opacity="0.3" />
+  <path d="M 58 107 C 70 114, 85 116, 100 113 C 114 110, 128 102, 138 90 C 136 103, 130 118, 122 131 C 116 140, 110 144, 104 144 C 99 144, 96 136, 94 126 C 92 119, 87 119, 85 126 C 83 136, 79 144, 74 144 C 68 144, 63 135, 60 124 C 57 115, 56 109, 58 107 Z" fill="url(#toothGreen)" />
+  <path d="M 80 144 C 85 144, 89 133, 90 124 C 92 118, 96 118, 98 124 C 99 133, 103 144, 108 144 C 99 138, 89 138, 80 144 Z" fill="#ffffff" />
+  <path d="M 134 68 Q 134 74 140 74 Q 134 74 134 80 Q 134 74 128 74 Q 134 74 134 68 Z" fill="#0096c7" />
+  <path d="M 143 82 Q 143 86 147 86 Q 143 86 143 90 Q 143 86 139 86 Q 143 86 143 82 Z" fill="#0096c7" />
+</svg>

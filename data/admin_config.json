@@ -1,0 +1,14 @@
+{
+  "pin": "1234",
+  "lastUpdated": "2026-09-03T07:59:07.405Z",
+  "lastUpdatedBy": "Clinic Admin",
+  "changeLog": [
+    {
+      "id": "CHG_1788422347405",
+      "action": "UPDATE_CLINIC_PROFILE",
+      "target": "Clinic Profile & Address",
+      "timestamp": "2026-09-03 07:59:07",
+      "details": "Updated clinic address to \"102 Wellness Plaza, Dental Street\", phone to \"+91 98765 00000\""
+    }
+  ]
+}

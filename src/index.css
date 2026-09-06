@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f8fafc;
+  --white: #ffffff;
+  --blue: #2563eb;
+  --blue-dark: #1d4ed8;
+  --blue-light: #eff6ff;
+  --blue-mid: #3b82f6;
+  --blue-glow: rgba(37, 99, 235, 0.15);
+  --text: #0f172a;
+  --muted: #64748b;
+  --dim: #94a3b8;
+  --border: #dbeafe;
+  --green: #10b981;
+  --green-light: #ecfdf5;
+  --radius: 16px;
+  --shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Nunito', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-pop-in {
+  animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ==========================================================================
+   PRINT SPECIFIC MEDIA STYLES (Professional Dental Clinic Slip Layout)
+   ========================================================================== */
+@page {
+  size: A4 portrait;
+  margin: 8mm 10mm;
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    font-size: 11pt !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Hide navigation, toolbars, and non-printable UI */
+  header,
+  nav,
+  footer,
+  .no-print,
+  #btn-book-another,
+  #btn-open-excel-db,
+  #btn-whatsapp-action,
+  #btn-print-summary,
+  #btn-whatsapp-send-receipt,
+  #btn-whatsapp-slip-modal,
+  #btn-print-slip-modal,
+  #btn-view-history-success,
+  svg.pointer-events-none {
+    display: none !important;
+  }
+
+  /* Reset main application card container wrapper for print */
+  main,
+  main > div {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: transparent !important;
+  }
+
+  /* Modal wrapper reset for print: eliminate darkening, blurs, and fixed offsets */
+  div[role="dialog"] {
+    position: static !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  div[role="dialog"] > div {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #printable-appointment-slip {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure tables and sections don't break awkwardly across pages */
+  table, tr, td, th, .border {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

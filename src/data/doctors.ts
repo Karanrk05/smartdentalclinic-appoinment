@@ -1,0 +1,48 @@
+import { Doctor } from '../types';
+
+export const DOCTORS: Doctor[] = [
+  {
+    id: 'doc1',
+    name: 'Dr. Vikram Shah',
+    spec: 'General Dental Surgeon',
+    qualifications: 'BDS, Dental Surgery',
+    experience: '15 yrs experience',
+    rating: 4.9,
+    reviewsCount: 520,
+    avatarBg: '#f0faf5',
+    avatarIcon: '👨‍⚕️',
+  },
+  {
+    id: 'doc2',
+    name: 'Dr. Priya Mehta',
+    spec: 'General & Preventive Dentistry',
+    qualifications: 'BDS, MDS',
+    experience: '12 yrs experience',
+    rating: 4.9,
+    reviewsCount: 384,
+    avatarBg: '#f0f4fa',
+    avatarIcon: '👩‍⚕️',
+  },
+  {
+    id: 'doc3',
+    name: 'Dr. Sneha Kulkarni',
+    spec: 'Family & General Dentistry',
+    qualifications: 'BDS',
+    experience: '10 yrs experience',
+    rating: 4.8,
+    reviewsCount: 401,
+    avatarBg: '#faf0f5',
+    avatarIcon: '👩‍⚕️',
+  },
+  {
+    id: 'doc4',
+    name: 'Dr. Arjun Rao',
+    spec: 'General Dental Practitioner',
+    qualifications: 'BDS, Preventive Oral Health',
+    experience: '9 yrs experience',
+    rating: 4.8,
+    reviewsCount: 290,
+    avatarBg: '#fafaf0',
+    avatarIcon: '👨‍⚕️',
+  },
+];
