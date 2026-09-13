@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Send,
   Printer,
+  Sparkles,
 } from 'lucide-react';
 import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
 import { cleanPhoneNumber } from './WhatsAppShareModal';
@@ -26,17 +27,22 @@ interface ExcelDatabaseModalProps {
   onClose: () => void;
   clinicProfile?: ClinicProfile;
   onRefreshNeeded?: () => void;
+  onOpenSmartReminder?: (appointment: any) => void;
+  onOpenAiInsights?: () => void;
 }
 
 export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
   isOpen,
   onClose,
   clinicProfile = DEFAULT_CLINIC_PROFILE,
+  onOpenSmartReminder,
+  onOpenAiInsights,
 }) => {
   const [records, setRecords] = useState<PatientRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRecord, setSelectedRecord] = useState<PatientRecord | null>(null);
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState<string>('all');
   const [slipToPrint, setSlipToPrint] = useState<PatientRecord | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const [isClearing, setIsClearing] = useState<boolean>(false);
@@ -66,7 +72,12 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
 
   if (!isOpen) return null;
 
+  const doctorNames = Array.from(new Set(records.map((r) => r.doctorName).filter(Boolean)));
+
   const filteredRecords = records.filter((r) => {
+    if (selectedDoctorFilter !== 'all' && r.doctorName !== selectedDoctorFilter) {
+      return false;
+    }
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -75,7 +86,8 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
       r.phone.toLowerCase().includes(q) ||
       r.email.toLowerCase().includes(q) ||
       r.treatmentName.toLowerCase().includes(q) ||
-      r.doctorName.toLowerCase().includes(q)
+      r.doctorName.toLowerCase().includes(q) ||
+      (r.paymentMode && r.paymentMode.toLowerCase().includes(q))
     );
   });
 
@@ -131,21 +143,50 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
         </div>
 
         {/* Toolbar */}
-        <div className="p-4 sm:px-6 bg-[#f8fafc] border-b border-[#dbeafe] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748b]" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search patients, ref, phone, treatment…"
-              className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm font-semibold bg-white border border-[#dbeafe] rounded-xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#2563eb]"
-            />
+        <div className="p-3.5 sm:px-6 bg-[#f8fafc] border-b border-[#dbeafe] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748b]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search patients, ref, phone, treatment…"
+                className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm font-semibold bg-white border border-[#dbeafe] rounded-xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#2563eb]"
+              />
+            </div>
+
+            <select
+              value={selectedDoctorFilter}
+              onChange={(e) => setSelectedDoctorFilter(e.target.value)}
+              className="text-xs font-bold bg-white border border-[#dbeafe] rounded-xl px-2.5 py-2 text-[#0f172a] focus:outline-none focus:border-[#2563eb] cursor-pointer shrink-0"
+              title="Filter by assigned Doctor"
+            >
+              <option value="all">👨‍⚕️ All Doctors ({records.length})</option>
+              {doctorNames.map((name) => (
+                <option key={name} value={name}>
+                  {name} ({records.filter((r) => r.doctorName === name).length})
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-2.5 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+            {onOpenAiInsights && (
+              <button
+                type="button"
+                id="btn-open-ai-insights-toolbar"
+                onClick={onOpenAiInsights}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                title="View Gemini AI Practice Insights & Analytics"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                <span>AI Insights</span>
+              </button>
+            )}
+
             <span className="text-xs font-bold text-[#64748b]">
-              Total Records: <strong className="text-[#2563eb]">{records.length}</strong>
+              Showing: <strong className="text-[#2563eb]">{filteredRecords.length}</strong> / {records.length}
             </span>
 
             {records.length > 0 && (
@@ -198,6 +239,8 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                     <th className="py-3 px-3.5 whitespace-nowrap">Assigned Dentist</th>
                     <th className="py-3 px-3.5 whitespace-nowrap">Appointment</th>
                     <th className="py-3 px-3.5 whitespace-nowrap">Fee</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap">Payment</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap">Attachment</th>
                     <th className="py-3 px-3.5 whitespace-nowrap">Status</th>
                   </tr>
                 </thead>
@@ -233,6 +276,29 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                       </td>
                       <td className="py-3 px-3.5 font-bold text-[#2563eb] whitespace-nowrap">
                         {rec.estimatedFee}
+                      </td>
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        {rec.paymentStatus?.toLowerCase().includes('paid') ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                            ₹200 Paid
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-medium text-[10px]">
+                            Pay at Clinic
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        {rec.attachmentName && rec.attachmentName !== 'None' ? (
+                          <span
+                            className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold text-[10px] max-w-[120px] truncate"
+                            title={rec.attachmentName}
+                          >
+                            📎 {rec.attachmentName}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-3.5 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-extrabold text-[10px]">
@@ -279,6 +345,20 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                   <span className="text-[#64748b] font-semibold">Dentist:</span>{' '}
                   <span className="font-bold text-[#0f172a]">{selectedRecord.doctorName}</span>
                 </div>
+                <div>
+                  <span className="text-[#64748b] font-semibold">Payment:</span>{' '}
+                  <span className="font-bold text-[#0f172a]">
+                    {selectedRecord.paymentMode || 'Pay at Counter'} ({selectedRecord.paymentStatus || 'Pending'})
+                  </span>
+                </div>
+                {selectedRecord.attachmentName && selectedRecord.attachmentName !== 'None' && (
+                  <div className="sm:col-span-2">
+                    <span className="text-[#64748b] font-semibold">Attachment:</span>{' '}
+                    <span className="font-bold text-blue-700">
+                      📎 {selectedRecord.attachmentName} ({selectedRecord.attachmentSize || 'Uploaded'})
+                    </span>
+                  </div>
+                )}
               </div>
 
               {selectedRecord.notes && (
@@ -335,6 +415,31 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                     <Printer className="w-3.5 h-3.5" />
                     <span>Print Slip</span>
                   </button>
+
+                  {onOpenSmartReminder && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenSmartReminder({
+                          bookingRef: selectedRecord.bookingRef,
+                          patientName: selectedRecord.patientName,
+                          treatmentName: selectedRecord.treatmentName,
+                          doctorName: selectedRecord.doctorName,
+                          appointmentDate: selectedRecord.appointmentDate,
+                          appointmentTime: selectedRecord.appointmentTime,
+                          branchName: selectedRecord.branchName || clinicProfile.name,
+                          branchAddress: clinicProfile.address,
+                          patientPhone: selectedRecord.phone,
+                          notes: selectedRecord.notes,
+                        })
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-300 text-teal-800 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
+                      title="Generate AI Procedure-Specific Preparation Reminder"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-teal-600 animate-pulse" />
+                      <span>AI Reminder</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

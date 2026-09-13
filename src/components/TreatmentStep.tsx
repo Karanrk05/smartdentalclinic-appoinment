@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, X, Check, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { Treatment, ClinicBranch } from '../types';
 import { GENERAL_TREATMENTS } from '../data/treatments';
 import { BranchSelector } from './BranchSelector';

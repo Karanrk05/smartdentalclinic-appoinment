@@ -21,10 +21,14 @@ import {
   ExternalLink,
   ChevronRight,
   ShieldCheck,
+  CreditCard,
+  ChevronDown,
+  Receipt,
 } from 'lucide-react';
-import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
+import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE, PaymentTransaction } from '../types';
 import { SmartDentalLogo } from './SmartDentalLogo';
 import { PrintSummaryModal } from './PrintSummaryModal';
+import { PaymentHistoryList } from './PaymentHistoryList';
 
 interface PatientHistoryModalProps {
   isOpen: boolean;
@@ -52,13 +56,17 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
     email: string;
     patientType: string;
   } | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentTransaction[]>([]);
+  const [showPaymentHistory, setShowPaymentHistory] = useState<boolean>(false);
   const [stats, setStats] = useState({
     totalBookings: 0,
     upcomingCount: 0,
     pastCount: 0,
     cancelledCount: 0,
+    totalPaid: '₹0',
+    transactionsCount: 0,
   });
-  const [activeFilter, setActiveFilter] = useState<'all' | 'upcoming' | 'past' | 'cancelled'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'upcoming' | 'past' | 'cancelled' | 'payments'>('all');
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
   // Cancellation state
@@ -67,15 +75,22 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
   const [isSubmittingCancel, setIsSubmittingCancel] = useState<boolean>(false);
   const [cancelSuccessMsg, setCancelSuccessMsg] = useState<string>('');
 
+  // Rescheduling state
+  const [reschedulingRecord, setReschedulingRecord] = useState<PatientRecord | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
+  const [rescheduleTime, setRescheduleTime] = useState<string>('10:00 AM');
+  const [rescheduleReason, setRescheduleReason] = useState<string>('Schedule adjustment');
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false);
+
   // Slip Printing state
   const [slipRecord, setSlipRecord] = useState<PatientRecord | null>(null);
 
-  // Sample quick queries for testing
-  const [demoQueries, setDemoQueries] = useState<string[]>([]);
+  // Recent patient queries from actual appointments
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch latest 3 phone numbers or refs from /api/patients for 1-click test chips
+      // Fetch latest 3 phone numbers or refs from /api/patients for recent searches
       fetch('/api/patients')
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -88,7 +103,9 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
               )
             ).slice(0, 3) as string[];
 
-            setDemoQueries(numbers);
+            setRecentQueries(numbers);
+          } else {
+            setRecentQueries([]);
           }
         })
         .catch(() => {});
@@ -122,23 +139,28 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
       if (response.ok && data.success) {
         setRecords(data.records || []);
         setPatientProfile(data.patientProfile || null);
+        setPaymentHistory(data.paymentHistory || []);
         setStats(
           data.stats || {
             totalBookings: data.records?.length || 0,
             upcomingCount: 0,
             pastCount: 0,
             cancelledCount: 0,
+            totalPaid: '₹0',
+            transactionsCount: 0,
           }
         );
       } else {
         setError(data.error || 'No appointments found matching this mobile number.');
         setRecords([]);
         setPatientProfile(null);
+        setPaymentHistory([]);
       }
     } catch (err) {
       setError('Network error occurred while fetching patient history.');
       setRecords([]);
       setPatientProfile(null);
+      setPaymentHistory([]);
     } finally {
       setIsLoading(false);
     }
@@ -189,6 +211,56 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
     }
   };
 
+  const handleStartReschedule = (rec: PatientRecord) => {
+    setReschedulingRecord(rec);
+    setRescheduleDate(rec.appointmentDate || todayStr);
+    setRescheduleTime(rec.appointmentTime || '10:00 AM');
+    setRescheduleReason('Patient requested new slot');
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!reschedulingRecord || !rescheduleDate || !rescheduleTime) return;
+    setIsSubmittingReschedule(true);
+
+    try {
+      const res = await fetch(`/api/bookings/${encodeURIComponent(reschedulingRecord.bookingRef)}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: rescheduleDate,
+          time: rescheduleTime,
+          reason: rescheduleReason,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setRecords((prev) =>
+          prev.map((r) =>
+            r.bookingRef.toUpperCase() === reschedulingRecord.bookingRef.toUpperCase()
+              ? {
+                  ...r,
+                  appointmentDate: rescheduleDate,
+                  appointmentTime: rescheduleTime,
+                  status: 'Confirmed',
+                }
+              : r
+          )
+        );
+        setCancelSuccessMsg(
+          `Appointment ${reschedulingRecord.bookingRef} rescheduled to ${rescheduleDate} at ${rescheduleTime}.`
+        );
+        setReschedulingRecord(null);
+      } else {
+        alert(data.error || 'Failed to reschedule appointment');
+      }
+    } catch (err) {
+      alert('Network error while rescheduling appointment.');
+    } finally {
+      setIsSubmittingReschedule(false);
+    }
+  };
+
   // Filter records
   const todayStr = new Date().toISOString().split('T')[0];
   const filteredRecords = records.filter((r) => {
@@ -199,6 +271,7 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
     if (activeFilter === 'upcoming') return isUpcoming;
     if (activeFilter === 'past') return isPast && !isCancelled;
     if (activeFilter === 'cancelled') return isCancelled;
+    if (activeFilter === 'payments') return false;
     return true; // 'all'
   });
 
@@ -299,11 +372,11 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
             </button>
           </div>
 
-          {/* Quick Demo Chips */}
-          {demoQueries.length > 0 && !hasSearched && (
+          {/* Recent patient search chips if appointments exist */}
+          {recentQueries.length > 0 && !hasSearched && (
             <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-500">
-              <span className="font-semibold text-[11px]">Quick search existing numbers:</span>
-              {demoQueries.map((num) => (
+              <span className="font-semibold text-[11px]">Recent patient numbers:</span>
+              {recentQueries.map((num) => (
                 <button
                   key={num}
                   type="button"
@@ -336,88 +409,180 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
 
         {/* Patient Summary Banner (When records found) */}
         {patientProfile && records.length > 0 && (
-          <div className="px-4 sm:px-6 py-3 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-blue-100 text-[#2563eb] flex items-center justify-center font-black text-sm">
-                {patientProfile.name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-sm text-slate-900 leading-tight">
-                    {patientProfile.name}
-                  </h3>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                    {patientProfile.patientType || 'Registered Patient'}
-                  </span>
+          <div className="bg-white border-b border-slate-200 shrink-0">
+            <div className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-100 text-[#2563eb] flex items-center justify-center font-black text-sm shrink-0">
+                  {patientProfile.name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5">
-                  <span className="flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-slate-400" />
-                    {patientProfile.phone}
-                  </span>
-                  {patientProfile.email && (
-                    <span className="flex items-center gap-1 hidden sm:inline-flex">
-                      <Mail className="w-3 h-3 text-slate-400" />
-                      {patientProfile.email}
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-extrabold text-sm sm:text-base text-slate-900 leading-tight">
+                      {patientProfile.name}
+                    </h3>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                      {patientProfile.patientType || 'Registered Patient'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-0.5 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      {patientProfile.phone}
+                    </span>
+                    {patientProfile.email && (
+                      <span className="flex items-center gap-1 hidden sm:inline-flex">
+                        <Mail className="w-3 h-3 text-slate-400" />
+                        {patientProfile.email}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Patient Details: Payment History Quick Button & Filter Tabs */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Payment History Quick Toggle in Patient Details */}
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    showPaymentHistory
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                  }`}
+                  title="Toggle Payment History list for this patient"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Payment History ({paymentHistory.length})</span>
+                  {stats.totalPaid && stats.totalPaid !== '₹0' && (
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-black ${
+                        showPaymentHistory ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'
+                      }`}
+                    >
+                      {stats.totalPaid}
                     </span>
                   )}
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      showPaymentHistory ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter('all');
+                      setShowPaymentHistory(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      activeFilter === 'all' && !showPaymentHistory
+                        ? 'bg-white text-[#2563eb] shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    All ({records.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter('upcoming');
+                      setShowPaymentHistory(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      activeFilter === 'upcoming' && !showPaymentHistory
+                        ? 'bg-white text-emerald-700 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Upcoming ({stats.upcomingCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter('past');
+                      setShowPaymentHistory(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      activeFilter === 'past' && !showPaymentHistory
+                        ? 'bg-white text-slate-800 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Past ({stats.pastCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter('cancelled');
+                      setShowPaymentHistory(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      activeFilter === 'cancelled' && !showPaymentHistory
+                        ? 'bg-white text-rose-700 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Cancelled ({stats.cancelledCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter('payments');
+                      setShowPaymentHistory(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                      activeFilter === 'payments'
+                        ? 'bg-white text-emerald-800 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Receipt className="w-3 h-3 text-emerald-600" />
+                    <span>Payments ({paymentHistory.length})</span>
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setActiveFilter('all')}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeFilter === 'all'
-                    ? 'bg-white text-[#2563eb] shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                All ({records.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter('upcoming')}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeFilter === 'upcoming'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Upcoming ({stats.upcomingCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter('past')}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeFilter === 'past'
-                    ? 'bg-white text-slate-800 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Past ({stats.pastCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter('cancelled')}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeFilter === 'cancelled'
-                    ? 'bg-white text-rose-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Cancelled ({stats.cancelledCount})
-              </button>
-            </div>
+            {/* Expandable Patient Payment History list inside Patient Details section */}
+            {showPaymentHistory && (
+              <div className="px-4 sm:px-6 pb-4 pt-2 border-t border-slate-100 bg-slate-50/50 animate-fade-in">
+                <PaymentHistoryList
+                  transactions={paymentHistory}
+                  isLoading={isLoading}
+                  patientName={patientProfile.name}
+                  patientPhone={patientProfile.phone}
+                  title="Patient Payment History"
+                  emptyMessage={`No previous transactions recorded for ${patientProfile.name}`}
+                  onRefresh={() => executeSearch()}
+                />
+              </div>
+            )}
           </div>
         )}
 
         {/* Modal Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          {!hasSearched ? (
+          {activeFilter === 'payments' ? (
+            <div className="space-y-4">
+              <PaymentHistoryList
+                transactions={paymentHistory}
+                isLoading={isLoading}
+                patientName={patientProfile?.name}
+                patientPhone={patientProfile?.phone}
+                title="Complete Patient Payment History & Ledger"
+                emptyMessage={
+                  patientProfile
+                    ? `No previous payment transactions found on record for ${patientProfile.name}`
+                    : 'No payment transactions found'
+                }
+                onRefresh={() => executeSearch()}
+              />
+            </div>
+          ) : !hasSearched ? (
             <div className="py-12 text-center space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2563eb] mx-auto flex items-center justify-center">
                 <Search className="w-7 h-7" />
@@ -577,6 +742,18 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* Reschedule Button (if upcoming or cancelled) */}
+                        {isUpcoming && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartReschedule(rec)}
+                            className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            <span>Reschedule</span>
+                          </button>
+                        )}
+
                         {/* Cancel Appointment Button (if upcoming) */}
                         {isUpcoming && (
                           <button
@@ -584,7 +761,7 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
                             onClick={() => setCancellingRef(rec.bookingRef)}
                             className="px-3 py-1.5 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition-colors cursor-pointer"
                           >
-                            Cancel Appointment
+                            Cancel
                           </button>
                         )}
 
@@ -689,6 +866,111 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-xs cursor-pointer disabled:opacity-50"
               >
                 {isSubmittingCancel ? 'Cancelling…' : 'Yes, Cancel Appointment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Dialog */}
+      {reschedulingRecord && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-blue-200 space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3 text-blue-600">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Reschedule Appointment {reschedulingRecord.bookingRef}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {reschedulingRecord.doctorName} · {reschedulingRecord.treatmentName}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  New Appointment Date:
+                </label>
+                <input
+                  type="date"
+                  min={todayStr}
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="w-full text-xs font-semibold p-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  Select Time Slot:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
+                  {[
+                    '09:30 AM',
+                    '10:00 AM',
+                    '10:30 AM',
+                    '11:00 AM',
+                    '11:30 AM',
+                    '02:00 PM',
+                    '02:30 PM',
+                    '03:00 PM',
+                    '03:30 PM',
+                    '04:00 PM',
+                    '04:30 PM',
+                    '05:00 PM',
+                    '05:30 PM',
+                    '06:00 PM',
+                  ].map((timeSlot) => (
+                    <button
+                      key={timeSlot}
+                      type="button"
+                      onClick={() => setRescheduleTime(timeSlot)}
+                      className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                        rescheduleTime === timeSlot
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'
+                      }`}
+                    >
+                      {timeSlot}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Reason for Rescheduling (optional):
+                </label>
+                <input
+                  type="text"
+                  value={rescheduleReason}
+                  onChange={(e) => setRescheduleReason(e.target.value)}
+                  placeholder="e.g. Work commitment, prefer morning slot"
+                  className="w-full text-xs font-semibold p-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setReschedulingRecord(null)}
+                disabled={isSubmittingReschedule}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReschedule}
+                disabled={isSubmittingReschedule || !rescheduleDate || !rescheduleTime}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingReschedule ? 'Rescheduling…' : 'Confirm New Slot'}
               </button>
             </div>
           </div>

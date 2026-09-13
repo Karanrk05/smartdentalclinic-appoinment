@@ -118,6 +118,18 @@ export const PrintableAppointmentSlip: React.FC<PrintableAppointmentSlipProps> =
             <span>EST. FEE:</span>
             <span>{treatment.price}</span>
           </div>
+          {Number(patient.amountPaidNow || 0) > 0 && (
+            <div className="flex justify-between text-xs text-emerald-800">
+              <span>PAID NOW:</span>
+              <span>₹{patient.amountPaidNow}</span>
+            </div>
+          )}
+          {patient.amountRemaining && (
+            <div className="flex justify-between text-xs text-blue-900">
+              <span>REMAINING:</span>
+              <span>{patient.amountRemaining}</span>
+            </div>
+          )}
           <div className="text-[9px] text-center font-normal text-slate-700">
             * Payable at counter via UPI, Card, or Cash
           </div>
@@ -343,9 +355,23 @@ export const PrintableAppointmentSlip: React.FC<PrintableAppointmentSlipProps> =
           </tfoot>
         </table>
 
-        <div className="bg-[#f8fafc] px-4 py-2 border-t border-[#e2e8f0] text-[11px] text-[#64748b] flex items-center justify-between">
-          <span>* Payment mode: Payable at clinic counter via UPI, Credit/Debit Card, or Cash upon arrival.</span>
-          <span className="font-bold text-[#0f172a]">Status: DUE AT CLINIC</span>
+        <div className="bg-[#f8fafc] px-4 py-2.5 border-t border-[#e2e8f0] text-[11px] text-[#64748b] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            {Number(patient.amountPaidNow || 0) > 0 ? (
+              <span className="text-emerald-700 font-bold block">
+                ✓ Amount Paid Now: ₹{patient.amountPaidNow} {patient.paymentRef ? `(Ref: ${patient.paymentRef})` : ''} · Remaining: {patient.amountRemaining || 'Payable at clinic'}
+              </span>
+            ) : (
+              <span>* Payment mode: Payable at clinic counter via UPI, Card, or Cash upon arrival.</span>
+            )}
+          </div>
+          <span className="font-bold text-[#0f172a] shrink-0">
+            {Number(patient.amountPaidNow || 0) > 0 ? (
+              <span className="text-emerald-700 font-mono">ADVANCE SETTLED</span>
+            ) : (
+              'Status: DUE AT CLINIC'
+            )}
+          </span>
         </div>
       </div>
 

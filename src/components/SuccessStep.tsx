@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Copy, CheckCheck, Printer, RefreshCw, FileSpreadsheet, Download, MessageSquare, Send, Clock, Building2, Check, Zap } from 'lucide-react';
-import { BookingState, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { Copy, CheckCheck, Printer, RefreshCw, FileSpreadsheet, Download, MessageSquare, Send, Clock, Building2, Check, Zap, Sparkles, Calendar } from 'lucide-react';
+import { BookingState, ClinicProfile, DEFAULT_CLINIC_PROFILE, PaymentTransaction } from '../types';
 import { formatSlotTime } from './ScheduleStep';
 import { PrintSummaryModal } from './PrintSummaryModal';
 import { WhatsAppShareModal } from './WhatsAppShareModal';
@@ -8,6 +9,7 @@ import { PrintableAppointmentSlip } from './PrintableAppointmentSlip';
 import { SmartDentalLogo } from './SmartDentalLogo';
 import { ReminderCard } from './ReminderCard';
 import { printSlipDirect } from '../utils/printSlip';
+import { PaymentHistoryList } from './PaymentHistoryList';
 
 interface SuccessStepProps {
   booking: BookingState;
@@ -15,6 +17,8 @@ interface SuccessStepProps {
   onReset: () => void;
   onOpenExcelModal?: () => void;
   onOpenPatientHistory?: () => void;
+  onOpenSmartReminder?: (appointment: any) => void;
+  onOpenPatientResponseDesk?: () => void;
 }
 
 export const SuccessStep: React.FC<SuccessStepProps> = ({
@@ -23,13 +27,33 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
   onReset,
   onOpenExcelModal,
   onOpenPatientHistory,
+  onOpenSmartReminder,
+  onOpenPatientResponseDesk,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [isQuickPrinting, setIsQuickPrinting] = useState(false);
   const [quickPrintToast, setQuickPrintToast] = useState<string | null>(null);
+  const [patientPayments, setPatientPayments] = useState<PaymentTransaction[]>([]);
+  const [isLoadingPayments, setIsLoadingPayments] = useState<boolean>(false);
   const { treatment, doctor, selectedDate, selectedTime, patient, bookingRef, branch } = booking;
+
+  useEffect(() => {
+    const q = patient.phone || patient.email || bookingRef || '';
+    if (q.trim()) {
+      setIsLoadingPayments(true);
+      fetch(`/api/patients/history?query=${encodeURIComponent(q.trim())}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.paymentHistory)) {
+            setPatientPayments(data.paymentHistory);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingPayments(false));
+    }
+  }, [patient.phone, patient.email, bookingRef]);
 
   if (!treatment || !doctor || !selectedDate || !selectedTime) {
     return null;
@@ -157,8 +181,14 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
           clinicProfile={clinicProfile}
         />
 
-        {/* Summary Box */}
-        <div className="bg-[#eff6ff] border-1.5 border-[#bfdbfe] rounded-2xl p-5 text-left max-w-lg mx-auto space-y-2.5 text-xs sm:text-sm shadow-xs">
+        {/* Summary Box with subtle fade-in transition effect */}
+        <motion.div
+          id="booking-details-summary"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1], delay: 0.12 }}
+          className="bg-[#eff6ff] border-1.5 border-[#bfdbfe] rounded-2xl p-5 text-left max-w-lg mx-auto space-y-2.5 text-xs sm:text-sm shadow-xs animate-fade-in"
+        >
           <div className="font-extrabold text-[#2563eb] pb-2 border-b border-[#dbeafe] flex items-center justify-between">
             <span>Confirmed Details</span>
             <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
@@ -203,6 +233,103 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
             <span className="text-[#64748b] font-semibold">Estimated Fee:</span>
             <span className="font-extrabold text-[#2563eb] text-right">{treatment.price}</span>
           </div>
+
+          <div className="flex justify-between py-1 border-t border-[#dbeafe] pt-2">
+            <span className="text-[#64748b] font-semibold">Amount Paid Now:</span>
+            <span className="font-extrabold text-[#0f172a] font-mono text-right text-xs">
+              {Number(patient.amountPaidNow || 0) > 0 ? (
+                <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                  ₹{Number(patient.amountPaidNow).toLocaleString('en-IN')}
+                </span>
+              ) : (
+                <span className="text-slate-600">₹0 (Pay Later)</span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex justify-between py-1">
+            <span className="text-[#64748b] font-semibold">Remaining Balance:</span>
+            <span className="font-extrabold text-blue-700 font-mono text-right text-xs">
+              {patient.amountRemaining || treatment.price}
+            </span>
+          </div>
+
+          <div className="flex justify-between py-1">
+            <span className="text-[#64748b] font-semibold">Payment Status:</span>
+            <span className="font-extrabold text-right">
+              {patient.paymentRef ? (
+                <span className="text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full text-xs font-bold inline-flex items-center gap-1">
+                  ✓ Verified ({patient.paymentRef})
+                </span>
+              ) : Number(patient.amountPaidNow || 0) > 0 ? (
+                <span className="text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                  ✓ Advance Paid
+                </span>
+              ) : (
+                <span className="text-slate-700 font-bold text-xs">
+                  Pay at Clinic Counter
+                </span>
+              )}
+            </span>
+          </div>
+
+          {patient.attachmentName && (
+            <div className="flex justify-between py-1">
+              <span className="text-[#64748b] font-semibold">Attached File:</span>
+              <span className="font-bold text-blue-700 text-right truncate max-w-[65%] text-xs">
+                📎 {patient.attachmentName}
+              </span>
+            </div>
+          )}
+
+          {/* Patient Details & Payment History */}
+          <div className="pt-3 mt-2 border-t border-[#dbeafe]">
+            <PaymentHistoryList
+              transactions={patientPayments}
+              isLoading={isLoadingPayments}
+              patientName={fullName}
+              patientPhone={patient.phone}
+              compact={true}
+              title="Patient Payment History"
+              emptyMessage={`No previous transactions recorded yet for ${fullName}`}
+              onRefresh={() => {
+                const q = patient.phone || patient.email || bookingRef || '';
+                if (q.trim()) {
+                  setIsLoadingPayments(true);
+                  fetch(`/api/patients/history?query=${encodeURIComponent(q.trim())}`)
+                    .then((res) => (res.ok ? res.json() : null))
+                    .then((data) => {
+                      if (data && data.success && Array.isArray(data.paymentHistory)) {
+                        setPatientPayments(data.paymentHistory);
+                      }
+                    })
+                    .finally(() => setIsLoadingPayments(false));
+                }
+              }}
+            />
+          </div>
+        </motion.div>
+
+        {/* Self-Service Cancellation & Reschedule Link */}
+        <div className="max-w-lg mx-auto bg-white border-2 border-slate-200 rounded-2xl p-3.5 sm:p-4 text-left flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="space-y-0.5">
+            <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              <span>Self-Service Reschedule or Cancel</span>
+            </span>
+            <p className="text-[11px] text-slate-500 font-medium">
+              Change your slot or cancel anytime online without calling reception.
+            </p>
+          </div>
+          {onOpenPatientHistory && (
+            <button
+              type="button"
+              onClick={onOpenPatientHistory}
+              className="w-full sm:w-auto shrink-0 px-3.5 py-1.5 rounded-xl border border-blue-300 bg-blue-50/80 hover:bg-blue-100 text-blue-700 font-extrabold text-xs transition-colors cursor-pointer"
+            >
+              Manage Booking
+            </button>
+          )}
         </div>
 
         {/* WhatsApp Send Receipt Highlight Card */}
@@ -244,7 +371,7 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
         )}
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 max-w-2xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-2 max-w-4xl mx-auto">
           {onOpenPatientHistory && (
             <button
               id="btn-view-history-success"
@@ -282,6 +409,41 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
             </button>
           </div>
 
+          {/* Smart AI Reminder Button */}
+          {onOpenSmartReminder && (
+            <button
+              id="btn-smart-reminder-action"
+              type="button"
+              onClick={() =>
+                onOpenSmartReminder({
+                  bookingRef,
+                  patientName: fullName || 'Valued Patient',
+                  treatmentName: treatment.name,
+                  doctorName: doctor.name,
+                  appointmentDate:
+                    selectedDate instanceof Date
+                      ? selectedDate.toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : String(selectedDate),
+                  appointmentTime: formatSlotTime(selectedTime),
+                  branchName: branch?.shortName || 'Main Clinic',
+                  branchAddress: branch?.address || clinicProfile.address,
+                  patientPhone: patient?.phone || '',
+                  notes: booking.patient?.notes || '',
+                })
+              }
+              className="flex items-center justify-center gap-1.5 py-3 px-2.5 rounded-xl font-bold text-xs sm:text-sm text-teal-900 border-2 border-teal-500 bg-teal-50 hover:bg-teal-100 active:scale-95 transition-all cursor-pointer shadow-xs min-h-[44px]"
+              title="AI Procedure-Specific Preparation & Notification Generator"
+            >
+              <Sparkles className="w-4 h-4 text-teal-600 shrink-0 animate-pulse" />
+              <span>AI Reminder</span>
+            </button>
+          )}
+
           <button
             id="btn-book-another"
             type="button"
@@ -293,8 +455,8 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
           </button>
         </div>
 
-        {/* 1-Click Quick Print Pill for Busy Clinic Desks */}
-        <div className="flex items-center justify-center gap-3 pt-1 text-xs">
+        {/* 1-Click Quick Print & Clinic Desk AI Quick Tools */}
+        <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1 text-xs">
           <button
             type="button"
             onClick={handleQuickPrint}
@@ -305,6 +467,18 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
             <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
             <span>{isQuickPrinting ? 'Printing…' : '1-Click Quick Print (A4)'}</span>
           </button>
+
+          {onOpenPatientResponseDesk && (
+            <button
+              type="button"
+              onClick={onOpenPatientResponseDesk}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold transition-colors cursor-pointer"
+              title="Open Receptionist Automated Patient Response Desk"
+            >
+              <MessageSquare className="w-3 h-3 text-indigo-500" />
+              <span>AI Receptionist Response Desk</span>
+            </button>
+          )}
         </div>
       </div>
 

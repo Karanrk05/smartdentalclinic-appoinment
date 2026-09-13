@@ -40,6 +40,10 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  MessageSquare,
+  CreditCard,
+  QrCode,
+  BarChart3,
 } from 'lucide-react';
 import {
   Treatment,
@@ -52,6 +56,8 @@ import {
   ClinicBranch,
   DEFAULT_BRANCHES,
 } from '../types';
+import { AiClinicInsightsView } from './AiClinicInsightsView';
+import { AdminSummaryDashboard } from './AdminSummaryDashboard';
 
 const formatSlotTime = (t: string): string => {
   if (!t) return '';
@@ -90,8 +96,8 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
   const [pinError, setPinError] = useState<string>('');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
-  // Active Tab: Defaults to 'branches' or 'profile' for easy management
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'treatments' | 'doctors' | 'timings' | 'settings'>('branches');
+  // Active Tab: Defaults to 'dashboard' for instant visual analytics
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'branches' | 'treatments' | 'doctors' | 'timings' | 'settings' | 'ai_insights'>('dashboard');
 
   // Clinic Branches Management State
   const [branches, setBranches] = useState<ClinicBranch[]>(DEFAULT_BRANCHES);
@@ -1067,13 +1073,9 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                 <span>{isVerifying ? 'Verifying...' : 'Unlock Admin Portal'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleQuickUnlock}
-                className="w-full py-2 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs transition-colors cursor-pointer"
-              >
-                ⚡ 1-Click Quick Demo Unlock (Default: 1234)
-              </button>
+              <p className="text-[11px] text-slate-400 text-center font-medium">
+                Default Master PIN: <span className="font-bold text-slate-600">1234</span> (configurable inside Settings)
+              </p>
             </form>
           </div>
         ) : (
@@ -1115,6 +1117,23 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
             {/* Admin Tabs */}
             <div className="bg-white border-b border-slate-200 px-3 sm:px-7 pt-2 sm:pt-3 flex items-center justify-between gap-2 sm:gap-4 shrink-0 overflow-x-auto">
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                <button
+                  id="tab-admin-dashboard"
+                  type="button"
+                  onClick={() => setActiveTab('dashboard')}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === 'dashboard'
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/60 rounded-t-lg'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4 shrink-0 text-blue-600" />
+                  <span>Summary Dashboard</span>
+                  <span className="bg-blue-100 text-blue-800 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
+                    Analytics
+                  </span>
+                </button>
+
                 <button
                   id="tab-admin-profile"
                   type="button"
@@ -1210,6 +1229,23 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                   <Sliders className="w-4 h-4 shrink-0" />
                   <span>Audit & Reset</span>
                 </button>
+
+                <button
+                  id="tab-admin-ai-insights"
+                  type="button"
+                  onClick={() => setActiveTab('ai_insights')}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === 'ai_insights'
+                      ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60 rounded-t-lg'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 shrink-0 text-indigo-600 animate-pulse" />
+                  <span>AI Clinic Insights</span>
+                  <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                    Gemini
+                  </span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2 pb-2 shrink-0">
@@ -1225,6 +1261,17 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* TAB CONTENT: SUMMARY DASHBOARD & ANALYTICS */}
+            {activeTab === 'dashboard' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                <AdminSummaryDashboard
+                  treatments={treatments}
+                  branches={branches}
+                  onNavigateToTreatments={() => setActiveTab('treatments')}
+                />
+              </div>
+            )}
 
             {/* TAB CONTENT 0: CLINIC PROFILE & CONTACTS */}
             {activeTab === 'profile' && (
@@ -1472,6 +1519,56 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                             placeholder="e.g. ISO 9001:2015 & NABH Certified Facility"
                             className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:bg-white"
                           />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5. Clinic UPI ID & Payment Configuration */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4.5 space-y-3.5 shadow-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="w-4 h-4 text-emerald-600" />
+                          <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800">
+                            5. Clinic UPI ID & Payment Gateway
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <QrCode className="w-3 h-3" />
+                          <span>Direct UPI Payments</span>
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Clinic Official UPI ID (VPA) <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={profileForm.clinicUpiId || ''}
+                            onChange={(e) => setProfileForm({ ...profileForm, clinicUpiId: e.target.value })}
+                            placeholder="e.g. smartdental@okhdfcbank"
+                            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Directs patient payments from GPay, PhonePe, Paytm, and BHIM straight to your clinic account.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Merchant / Payee Name
+                          </label>
+                          <input
+                            type="text"
+                            value={profileForm.clinicPayeeName || ''}
+                            onChange={(e) => setProfileForm({ ...profileForm, clinicPayeeName: e.target.value })}
+                            placeholder="e.g. Smart Dental Clinic"
+                            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Payee name shown on patient's UPI app payment confirmation screen.
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -3625,6 +3722,13 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                     <p className="text-xs text-slate-400 italic">No previous modifications logged.</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: AI CLINIC INSIGHTS */}
+            {activeTab === 'ai_insights' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
+                <AiClinicInsightsView clinicProfile={clinicProfile} />
               </div>
             )}
 

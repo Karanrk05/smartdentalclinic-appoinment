@@ -1,7 +1,9 @@
 {
   "name": "Smart Dental Clinic",
-  "description": "Smart Dental Clinic appointment booking system with multi-branch location support, patient history lookup portal, customizable treatment pricing, dentist directory, automated 24-hour reminders, WhatsApp receipts, and Excel database storage.",
-  "requestFramePermissions": [],
+  "description": "Smart Dental Clinic appointment booking system with WhatsApp AI Assistant for instant booking and queries, AI clinical triage, automated patient WhatsApp/SMS responses, procedure-specific smart reminders, practice intelligence analytics, multi-branch support, patient history portal, and Excel database storage.",
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

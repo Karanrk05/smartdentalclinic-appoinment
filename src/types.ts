@@ -20,6 +20,8 @@ export interface Doctor {
   avatarIcon: string;
 }
 
+export type PaymentMode = 'clinic' | 'upi_qr' | 'upi_apps' | 'card' | 'netbanking' | 'wallet';
+
 export interface PatientDetails {
   firstName: string;
   lastName: string;
@@ -28,6 +30,20 @@ export interface PatientDetails {
   dob: string;
   patientType: 'New patient' | 'Existing patient' | '';
   notes: string;
+  attachmentName?: string;
+  attachmentSize?: string;
+  attachmentData?: string;
+  paymentMethod?: 'clinic' | 'online_token' | 'online_full' | string;
+  paymentMode?: PaymentMode;
+  paymentTokenAmount?: string;
+  paymentAmount?: number;
+  paymentRef?: string;
+  paymentStatus?: string;
+  paymentBank?: string;
+  paymentCardLast4?: string;
+  paymentUpiId?: string;
+  amountPaidNow?: string;
+  amountRemaining?: string;
 }
 
 export interface ClinicBranch {
@@ -141,6 +157,8 @@ export interface ClinicProfile {
   landmark: string;
   registrationNumber: string;
   accreditation: string;
+  clinicUpiId?: string;
+  clinicPayeeName?: string;
   lastUpdated?: string;
 }
 
@@ -156,6 +174,8 @@ export const DEFAULT_CLINIC_PROFILE: ClinicProfile = {
   landmark: 'Opposite City Metro Station, Near Wellness Gardens',
   registrationNumber: 'SDC/MED/2026/0419',
   accreditation: 'ISO 9001:2015 & NABH Certified Facility',
+  clinicUpiId: 'smartdental@icici',
+  clinicPayeeName: 'Smart Dental Clinic',
 };
 
 export interface PatientRecord {
@@ -181,6 +201,26 @@ export interface PatientRecord {
   appointmentTime: string;
   notes: string;
   status: string;
+  paymentMode?: string;
+  paymentStatus?: string;
+  paymentRef?: string;
+  amountPaidNow?: string;
+  amountRemaining?: string;
+  attachmentName?: string;
+  attachmentSize?: string;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  bookingRef: string;
+  date: string;
+  amount: string;
+  treatmentName: string;
+  doctorName?: string;
+  branchName?: string;
+  paymentMode: string;
+  paymentStatus: string;
+  paymentRef?: string;
 }
 
 

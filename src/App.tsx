@@ -12,7 +12,14 @@ import { SuccessStep } from './components/SuccessStep';
 import { ExcelDatabaseModal } from './components/ExcelDatabaseModal';
 import { AdminCornerModal } from './components/AdminCornerModal';
 import { PatientHistoryModal } from './components/PatientHistoryModal';
+import { AiPatientResponseModal } from './components/AiPatientResponseModal';
+import { SmartReminderModal, SmartReminderData } from './components/SmartReminderModal';
+import { Footer } from './components/Footer';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { MobileAppTabBar } from './components/MobileAppTabBar';
+import { GENERAL_TREATMENTS } from './data/treatments';
 import { BookingState, Doctor, PatientDetails, Treatment, ClinicProfile, DEFAULT_CLINIC_PROFILE, ClinicBranch, DEFAULT_BRANCHES } from './types';
+import { addLocalBookedSlot, checkClientDailyReset } from './utils/slotManager';
 
 const STORAGE_KEY = 'smartdental_booking_draft';
 const STEP_STORAGE_KEY = 'smartdental_booking_step';
@@ -120,10 +127,15 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isPatientHistoryModalOpen, setIsPatientHistoryModalOpen] = useState<boolean>(false);
   const [patientHistoryQuery, setPatientHistoryQuery] = useState<string>('');
+  const [isAiPatientResponseOpen, setIsAiPatientResponseOpen] = useState<boolean>(false);
+  const [smartReminderAppointment, setSmartReminderAppointment] = useState<SmartReminderData | null>(null);
+  const [treatmentsList, setTreatmentsList] = useState<Treatment[]>(GENERAL_TREATMENTS);
+  const [doctorsList, setDoctorsList] = useState<Doctor[]>([]);
+  const [branchesList, setBranchesList] = useState<ClinicBranch[]>(DEFAULT_BRANCHES);
   const [dataRefreshCounter, setDataRefreshCounter] = useState<number>(0);
   const [clinicProfile, setClinicProfile] = useState<ClinicProfile>(DEFAULT_CLINIC_PROFILE);
 
-  // Fetch clinic profile on mount and on admin refresh
+  // Fetch clinic profile and clinical catalogs on mount and on admin refresh
   useEffect(() => {
     fetch('/api/clinic-profile')
       .then((res) => (res.ok ? res.json() : null))
@@ -133,6 +145,33 @@ export default function App() {
         }
       })
       .catch((err) => console.error('Failed to fetch clinic profile:', err));
+
+    fetch('/api/treatments')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.success && Array.isArray(data.data)) {
+          setTreatmentsList(data.data);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/doctors')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.success && Array.isArray(data.data)) {
+          setDoctorsList(data.data);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/branches')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.success && Array.isArray(data.data)) {
+          setBranchesList(data.data);
+        }
+      })
+      .catch(() => {});
   }, [dataRefreshCounter]);
 
   // Sync booking and currentStep to localStorage so accidental refresh preserves progress
@@ -211,13 +250,25 @@ export default function App() {
     const ref = `SC${randomSuffix}`;
     setBooking((prev) => ({ ...prev, bookingRef: ref }));
 
+    const formattedDate = booking.selectedDate
+      ? formatLocalDate(booking.selectedDate)
+      : '';
+    const formattedTime = booking.selectedTime ? formatSlotTime(booking.selectedTime) : '';
+
+    // Immediately lock the booked slot locally so it cannot be selected again
+    if (formattedDate && booking.selectedTime) {
+      addLocalBookedSlot({
+        date: formattedDate,
+        slot: booking.selectedTime,
+        doctorName: booking.doctor?.name || '',
+        branchId: booking.branch?.id || 'branch-1',
+        bookingRef: ref,
+        bookedAt: new Date().toISOString(),
+      });
+    }
+
     // Persist to backend Excel file storage via /api/bookings
     try {
-      const formattedDate = booking.selectedDate
-        ? formatLocalDate(booking.selectedDate)
-        : '';
-      const formattedTime = booking.selectedTime ? formatSlotTime(booking.selectedTime) : '';
-
       await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,11 +294,29 @@ export default function App() {
           appointmentDate: formattedDate,
           appointmentTime: formattedTime,
           notes: booking.patient.notes || 'None',
+          paymentMode: Number(booking.patient.amountPaidNow || 0) > 0
+            ? `Advance Paid (₹${booking.patient.amountPaidNow})`
+            : booking.patient.paymentMethod === 'online_token'
+              ? 'Online Token (₹200)'
+              : 'Pay at Clinic Counter',
+          paymentStatus: Number(booking.patient.amountPaidNow || 0) > 0
+            ? `Advance Paid (₹${booking.patient.amountPaidNow}) · Remaining ${booking.patient.amountRemaining || 'at clinic'}`
+            : 'Pending at Clinic Counter',
+          paymentRef: booking.patient.paymentRef || 'N/A',
+          amountPaidNow: booking.patient.amountPaidNow ? `₹${booking.patient.amountPaidNow}` : '₹0',
+          amountRemaining: booking.patient.amountRemaining || booking.treatment?.price || '₹0',
+          attachmentName: booking.patient.attachmentName ? `${booking.patient.attachmentName} (${booking.patient.attachmentSize || ''})` : 'None',
         }),
       });
     } catch (err) {
       console.error('Failed to sync booking to backend Excel:', err);
     }
+
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STEP_STORAGE_KEY);
+    } catch (e) {}
+    setDataRefreshCounter((c) => c + 1);
 
     goToStep(6);
   };
@@ -259,12 +328,16 @@ export default function App() {
     } catch (err) {
       console.error('Failed to clear booking draft from localStorage:', err);
     }
+    setDataRefreshCounter((c) => c + 1);
     setBooking(INITIAL_BOOKING);
     goToStep(1);
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col relative pb-20 overflow-x-hidden">
+    <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col relative pb-20 md:pb-0 overflow-x-hidden">
+      {/* Offline Connectivity Indicator */}
+      <OfflineIndicator />
+
       {/* Header */}
       <Header
         clinicProfile={clinicProfile}
@@ -285,7 +358,7 @@ export default function App() {
       )}
 
       {/* Main Container Card */}
-      <main className="w-full max-w-3xl mx-auto px-3.5 sm:px-6 mt-6 sm:mt-8 relative z-10">
+      <main className="w-full max-w-3xl mx-auto px-3.5 sm:px-6 mt-6 sm:mt-8 relative z-10 flex-1">
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(37,99,235,0.08)] border border-[#dbeafe] p-5 sm:p-8 overflow-hidden">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -338,6 +411,7 @@ export default function App() {
               {currentStep === 4 && (
                 <DetailsStep
                   patient={booking.patient}
+                  treatment={booking.treatment}
                   onChangePatient={handleChangePatient}
                   onBack={() => goToStep(3)}
                   onNext={() => goToStep(5)}
@@ -347,8 +421,10 @@ export default function App() {
               {currentStep === 5 && (
                 <ConfirmStep
                   booking={booking}
+                  clinicProfile={clinicProfile}
                   onBack={() => goToStep(4)}
                   onConfirm={handleConfirm}
+                  onUpdatePatient={handleChangePatient}
                 />
               )}
 
@@ -363,6 +439,8 @@ export default function App() {
                       booking.patient.phone || booking.patient.email || booking.bookingRef || ''
                     )
                   }
+                  onOpenSmartReminder={(data) => setSmartReminderAppointment(data)}
+                  onOpenPatientResponseDesk={() => setIsAiPatientResponseOpen(true)}
                 />
               )}
             </motion.div>
@@ -370,11 +448,33 @@ export default function App() {
         </div>
       </main>
 
+      {/* Modern Clinic Footer */}
+      <Footer
+        clinicProfile={clinicProfile}
+        onOpenExcelModal={() => setIsExcelModalOpen(true)}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        onOpenPatientHistory={() => handleOpenPatientHistory()}
+      />
+
+      {/* Native Mobile App Tab Bar (visible on mobile viewports) */}
+      <MobileAppTabBar
+        currentStep={currentStep}
+        onGoToBooking={() => goToStep(1)}
+        onOpenHistory={() => handleOpenPatientHistory()}
+        onOpenExcel={() => setIsExcelModalOpen(true)}
+        onOpenAdmin={() => setIsAdminModalOpen(true)}
+      />
+
       {/* Backend Excel Database Modal */}
       <ExcelDatabaseModal
         isOpen={isExcelModalOpen}
         onClose={() => setIsExcelModalOpen(false)}
         clinicProfile={clinicProfile}
+        onOpenSmartReminder={(data) => setSmartReminderAppointment(data)}
+        onOpenAiInsights={() => {
+          setIsExcelModalOpen(false);
+          setIsAdminModalOpen(true);
+        }}
       />
 
       {/* Admin Corner Management Modal */}
@@ -396,6 +496,27 @@ export default function App() {
           setIsPatientHistoryModalOpen(false);
           handleReset();
         }}
+      />
+
+      {/* AI Smart Reminder Generator Modal */}
+      <SmartReminderModal
+        isOpen={Boolean(smartReminderAppointment)}
+        onClose={() => setSmartReminderAppointment(null)}
+        appointment={smartReminderAppointment}
+        clinicProfile={clinicProfile}
+      />
+
+      {/* AI Patient Response Desk Modal */}
+      <AiPatientResponseModal
+        isOpen={isAiPatientResponseOpen}
+        onClose={() => setIsAiPatientResponseOpen(false)}
+        clinicProfile={clinicProfile}
+        patientName={booking.patient.firstName ? `${booking.patient.firstName} ${booking.patient.lastName}`.trim() : undefined}
+        patientPhone={booking.patient.phone || undefined}
+        treatmentName={booking.treatment?.name || undefined}
+        doctorName={booking.doctor?.name || undefined}
+        appointmentDate={booking.selectedDate ? formatLocalDate(booking.selectedDate) : undefined}
+        appointmentTime={booking.selectedTime ? formatSlotTime(booking.selectedTime) : undefined}
       />
 
       {/* Subtle Background Watermark */}

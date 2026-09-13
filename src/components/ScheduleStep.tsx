@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Clock, Ban, Check, Sparkles, Sun, Coffee, Building2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Clock, Ban, Check, Sparkles, Sun, Coffee, Building2, RefreshCw, AlertCircle } from 'lucide-react';
 import { Doctor, Treatment, PatientRecord, ClinicTimings, ClinicBranch } from '../types';
+import {
+  formatSlotTime,
+  formatLocalDate,
+  isTimeMatch,
+  isSameDate,
+  checkClientDailyReset,
+  getLocalBookedSlots,
+  resetTodaySlotsLocal,
+  getTodayDateString,
+} from '../utils/slotManager';
 
 interface ScheduleStepProps {
   selectedTreatment: Treatment;
@@ -27,40 +37,10 @@ export const ALL_SLOTS = [
   '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00'
 ];
 
-export const formatSlotTime = (t: string): string => {
-  if (!t) return '';
-  if (t.includes('AM') || t.includes('PM') || t.includes('am') || t.includes('pm')) return t;
-  const [h, m] = t.split(':').map(Number);
-  if (isNaN(h)) return t;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hour12}:${String(m || 0).padStart(2, '0')} ${period}`;
-};
-
-export const formatLocalDate = (d: Date): string => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-// Robust check if a slot matches an already booked appointment time
-export const isTimeMatch = (slot: string, bookedTimeStr: string): boolean => {
-  if (!bookedTimeStr) return false;
-  const target = bookedTimeStr.toLowerCase().trim();
-  const formatted = formatSlotTime(slot).toLowerCase().trim();
-  const raw = slot.toLowerCase().trim();
-
-  if (target === formatted || target === raw) return true;
-
-  // Compare normalized (e.g. "02:00 PM" vs "2:00 PM" or "2:00 pm")
-  const normTarget = target.replace(/^0/, '');
-  const normFormatted = formatted.replace(/^0/, '');
-  return normTarget === normFormatted;
-};
+export { formatSlotTime, formatLocalDate, isTimeMatch };
 
 const DEFAULT_TIMINGS: ClinicTimings = {
-  storeName: 'SmileCare Dental Clinic',
+  storeName: 'Smart Dental Clinic',
   schedules: {
     weekdays: { day: 'Monday - Friday', openTime: '09:00 AM', closeTime: '08:00 PM', isOpen: true },
     saturday: { day: 'Saturday', openTime: '09:00 AM', closeTime: '06:00 PM', isOpen: true },
@@ -93,6 +73,9 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   const today = new Date();
   const [bookedRecords, setBookedRecords] = useState<PatientRecord[]>([]);
   const [clinicTimings, setClinicTimings] = useState<ClinicTimings>(DEFAULT_TIMINGS);
+  const [localRefreshCounter, setLocalRefreshCounter] = useState<number>(0);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [resetNotification, setResetNotification] = useState<string | null>(null);
   const [viewYear, setViewYear] = useState<number>(
     selectedDate ? selectedDate.getFullYear() : today.getFullYear()
   );
@@ -100,9 +83,14 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
     selectedDate ? selectedDate.getMonth() : today.getMonth()
   );
 
-  // Fetch real bookings to calculate live slot availability
+  // Check client-side daily reset on mount or date changes
   useEffect(() => {
-    fetch('/api/patients')
+    checkClientDailyReset();
+  }, []);
+
+  // Fetch real bookings to calculate live slot availability with cache-busting
+  useEffect(() => {
+    fetch(`/api/patients?t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && Array.isArray(data.data)) {
@@ -110,11 +98,11 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
         }
       })
       .catch(() => {});
-  }, [selectedDate, selectedDoctor, refreshTrigger]);
+  }, [selectedDate, selectedDoctor, refreshTrigger, localRefreshCounter]);
 
   // Fetch clinic timings from server
   useEffect(() => {
-    fetch('/api/clinic-timings')
+    fetch('/api/clinic-timings', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && data.data) {
@@ -122,7 +110,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
         }
       })
       .catch(() => {});
-  }, [refreshTrigger]);
+  }, [refreshTrigger, localRefreshCounter]);
 
   const handlePrevMonth = () => {
     if (viewMonth === 0) {
@@ -199,25 +187,81 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   const selectedDateStr = selectedDate ? formatLocalDate(selectedDate) : '';
   const doctorNameLower = selectedDoctor?.name?.toLowerCase().trim() || '';
 
-  const realBlockedSlots = activeSlots.filter((slot) => {
-    return bookedRecords.some((r) => {
-      // Cancelled bookings do not block slots
-      if (r.status && r.status.toLowerCase() === 'cancelled') return false;
-      const matchDate = r.appointmentDate === selectedDateStr;
-      const matchDoc = !r.doctorName || r.doctorName.toLowerCase().trim() === doctorNameLower;
-      // If branch specified, check branch match
-      const matchBranch = !branch?.id || !r.branchId || r.branchId === branch.id;
-      const matchTime = isTimeMatch(slot, r.appointmentTime);
-      return matchDate && matchDoc && matchBranch && matchTime;
-    });
-  });
+  // Calculate real blocked slots combining backend Excel records & client persistent records
+  const realBlockedSlots = useMemo(() => {
+    if (!selectedDateStr) return [];
 
-  // If currently selected time was booked or disabled, auto-deselect it
+    const localList = getLocalBookedSlots();
+    const blocked: string[] = [];
+
+    for (const slot of activeSlots) {
+      // 1. Check against backend records
+      const isServerBooked = bookedRecords.some((r) => {
+        if (r.status && r.status.toLowerCase().includes('cancel')) return false;
+        if (!isSameDate(r.appointmentDate, selectedDateStr)) return false;
+        if (!isTimeMatch(slot, r.appointmentTime)) return false;
+        if (branch?.id && r.branchId && r.branchId !== branch.id) return false;
+        if (doctorNameLower && r.doctorName) {
+          return r.doctorName.toLowerCase().trim() === doctorNameLower;
+        }
+        return true;
+      });
+
+      // 2. Check against client session/local records
+      const isLocalBooked = localList.some((l) => {
+        if (!isSameDate(l.date, selectedDateStr)) return false;
+        if (!isTimeMatch(slot, l.slot)) return false;
+        if (branch?.id && l.branchId && l.branchId !== branch.id) return false;
+        if (doctorNameLower && l.doctorName) {
+          return l.doctorName.toLowerCase().trim() === doctorNameLower;
+        }
+        return true;
+      });
+
+      if (isServerBooked || isLocalBooked) {
+        blocked.push(slot);
+      }
+    }
+
+    return blocked;
+  }, [activeSlots, bookedRecords, selectedDateStr, doctorNameLower, branch?.id, localRefreshCounter]);
+
+  // If currently selected time was booked or disabled, auto-deselect it so it cannot be booked
   useEffect(() => {
     if (selectedTime && (realBlockedSlots.includes(selectedTime) || disabledSlots.includes(selectedTime))) {
       onSelectTime('');
     }
   }, [realBlockedSlots, disabledSlots, selectedTime, onSelectTime]);
+
+  // Trigger manual daily reset test
+  const handleTriggerDailyReset = async () => {
+    setIsResetting(true);
+    try {
+      // Clear client local storage booked slots for today
+      resetTodaySlotsLocal();
+
+      // Trigger backend daily reset
+      const res = await fetch('/api/slots/daily-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+
+      setLocalRefreshCounter((c) => c + 1);
+      setResetNotification(
+        data.message || 'Daily slots reset successfully! 9:00 AM and all slots are now available.'
+      );
+      setTimeout(() => setResetNotification(null), 6000);
+    } catch (err) {
+      // Fallback local reset
+      resetTodaySlotsLocal();
+      setLocalRefreshCounter((c) => c + 1);
+      setResetNotification('Daily slots reset locally! All slots are now available.');
+      setTimeout(() => setResetNotification(null), 6000);
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const bookedCount = realBlockedSlots.length;
   const availableSlotsList = activeSlots.filter(
@@ -236,6 +280,57 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
           <strong className="text-[#2563eb]">{selectedTreatment.name}</strong> with{' '}
           <strong className="text-[#2563eb]">{selectedDoctor.name}</strong>.
         </p>
+      </div>
+
+      {/* Daily Reset Notification Toast / Banner */}
+      {resetNotification && (
+        <div className="bg-emerald-50 border-2 border-emerald-300 text-emerald-900 rounded-xl p-3.5 flex items-start gap-2.5 shadow-sm animate-fadeIn">
+          <Check className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1 text-xs sm:text-sm font-semibold">
+            {resetNotification}
+          </div>
+          <button
+            type="button"
+            onClick={() => setResetNotification(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-0.5 rounded cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Daily Auto-Reset Information & Management Banner */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+            <RefreshCw className="w-4 h-4 animate-spin-slow" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs sm:text-sm font-extrabold text-blue-950">
+                Daily Slot Auto-Reset Active
+              </h4>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full border border-emerald-300 uppercase">
+                Active
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-blue-800/90 font-medium mt-0.5">
+              Once a slot (e.g. 9:00 AM) is booked, it cannot be selected again for that day.
+              All slots reset automatically every day at <strong>12:00 AM midnight</strong>.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleTriggerDailyReset}
+          disabled={isResetting}
+          title="Reset today's booked slots to test daily reset"
+          className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-blue-300 text-blue-700 hover:bg-blue-600 hover:text-white active:scale-95 text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+          <span>{isResetting ? 'Resetting...' : 'Test Daily Reset'}</span>
+        </button>
       </div>
 
       {/* Selected Banner */}

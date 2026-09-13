@@ -3,6 +3,13 @@ import path from 'path';
 import fs from 'fs';
 import * as xlsxModule from 'xlsx';
 import { createServer as createViteServer } from 'vite';
+import {
+  handleAppointmentAssistant,
+  handleAutomatedPatientResponse,
+  handleSmartReminder,
+  handleClinicInsights,
+  isGeminiConfigured,
+} from './server/geminiService';
 
 // Safe interop for xlsx in ESM/CJS
 const XLSX: any = (xlsxModule as any).default && (xlsxModule as any).default.read
@@ -97,6 +104,8 @@ interface ClinicProfileConfig {
   landmark: string;
   registrationNumber: string;
   accreditation: string;
+  clinicUpiId?: string;
+  clinicPayeeName?: string;
   lastUpdated?: string;
 }
 
@@ -112,6 +121,8 @@ const DEFAULT_CLINIC_PROFILE: ClinicProfileConfig = {
   landmark: 'Opposite City Metro Station, Near Wellness Gardens',
   registrationNumber: 'SDC/MED/2026/0419',
   accreditation: 'ISO 9001:2015 & NABH Certified Facility',
+  clinicUpiId: 'smartdental@okhdfcbank',
+  clinicPayeeName: 'Smart Dental Clinic',
 };
 
 interface DayScheduleItem {
@@ -569,6 +580,12 @@ interface PatientRecord {
   appointmentTime: string;
   notes: string;
   status: string;
+  paymentMode?: string;
+  paymentStatus?: string;
+  paymentRef?: string;
+  amountPaidNow?: string;
+  amountRemaining?: string;
+  attachmentName?: string;
 }
 
 interface ReminderLog {
@@ -689,7 +706,7 @@ function calculateReminderTimes(appointmentDate: string, appointmentTime: string
   }
 }
 
-// Initial patient data stored in Excel (starts clean for real patient records)
+// Clean initial patient records (production-ready empty state)
 const INITIAL_RECORDS: PatientRecord[] = [];
 
 const EXCEL_HEADERS = [
@@ -729,10 +746,10 @@ function getOrInitExcelFile(): PatientRecord[] {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const records = XLSX.utils.sheet_to_json(worksheet) as PatientRecord[];
-      return records;
+      return Array.isArray(records) ? records : [];
     } else {
-      writeExcelFile(INITIAL_RECORDS);
-      return INITIAL_RECORDS;
+      writeExcelFile([]);
+      return [];
     }
   } catch (err) {
     console.error('Error reading backend Excel file:', err);
@@ -799,7 +816,7 @@ if (!fs.existsSync(EXCEL_FILE_PATH)) {
 // ==========================================
 
 // 1. System Health & Full-Stack Status Check
-app.get('/api/system/health', (req, res) => {
+const systemHealthHandler = (req: express.Request, res: express.Response) => {
   try {
     const records = getOrInitExcelFile();
     const dbExists = fs.existsSync(EXCEL_FILE_PATH);
@@ -808,7 +825,7 @@ app.get('/api/system/health', (req, res) => {
     res.json({
       success: true,
       status: 'online',
-      service: 'SmileCare Dental Full-Stack API',
+      service: 'Smart Dental Clinic Full-Stack API',
       database: {
         type: 'Excel Spreadsheet (XLSX)',
         path: 'data/patients_records.xlsx',
@@ -823,7 +840,10 @@ app.get('/api/system/health', (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: 'Health check failed' });
   }
-});
+};
+
+app.get('/api/health', systemHealthHandler);
+app.get('/api/system/health', systemHealthHandler);
 
 // 2. Treatments Catalog Endpoint (Reads from persisted disk store)
 app.get('/api/treatments', (req, res) => {
@@ -1730,9 +1750,126 @@ app.post('/api/clinic-timings/reset-defaults', (req, res) => {
 });
 
 
+// Helpers for exact time parsing and comparison on backend
+function parseServerTimeToMinutes(timeStr: string): number | null {
+  if (!timeStr) return null;
+  const clean = timeStr.trim().toLowerCase();
+  const isPM = clean.includes('pm');
+  const isAM = clean.includes('am');
+  const timeOnly = clean.replace(/am|pm/g, '').trim().split('-')[0].trim();
+  const parts = timeOnly.split(':');
+  let hours = parseInt(parts[0], 10);
+  let minutes = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+  if (isNaN(hours)) return null;
+  if (isNaN(minutes)) minutes = 0;
+  if (isPM && hours < 12) hours += 12;
+  else if (isAM && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+function isServerTimeMatch(t1: string, t2: string): boolean {
+  if (!t1 || !t2) return false;
+  const m1 = parseServerTimeToMinutes(t1);
+  const m2 = parseServerTimeToMinutes(t2);
+  if (m1 !== null && m2 !== null) return m1 === m2;
+  return t1.trim().toLowerCase() === t2.trim().toLowerCase();
+}
+
+function isServerSameDate(d1: string, d2: string): boolean {
+  if (!d1 || !d2) return false;
+  const s1 = d1.trim().split('T')[0];
+  const s2 = d2.trim().split('T')[0];
+  if (s1 === s2) return true;
+  const p1 = s1.split('-').map((x) => parseInt(x, 10));
+  const p2 = s2.split('-').map((x) => parseInt(x, 10));
+  if (p1.length === 3 && p2.length === 3) {
+    return p1[0] === p2[0] && p1[1] === p2[1] && p1[2] === p2[2];
+  }
+  return false;
+}
+
+function getServerTodayString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// Daily Reset Engine Store & Logic
+const DAILY_RESET_FILE = path.join(DATA_DIR, 'daily_reset_state.json');
+
+interface DailyResetState {
+  lastResetDate: string;
+  lastResetTimestamp: string;
+  autoResetEnabled: boolean;
+  history: Array<{ date: string; timestamp: string; reason: string }>;
+}
+
+function getDailyResetState(): DailyResetState {
+  try {
+    if (fs.existsSync(DAILY_RESET_FILE)) {
+      const data = JSON.parse(fs.readFileSync(DAILY_RESET_FILE, 'utf-8'));
+      if (data && data.lastResetDate) return data;
+    }
+  } catch (e) {
+    console.error('Error reading daily reset state:', e);
+  }
+  const today = getServerTodayString();
+  const initial: DailyResetState = {
+    lastResetDate: today,
+    lastResetTimestamp: new Date().toISOString(),
+    autoResetEnabled: true,
+    history: [{ date: today, timestamp: new Date().toISOString(), reason: 'System Initialization' }],
+  };
+  saveDailyResetState(initial);
+  return initial;
+}
+
+function saveDailyResetState(state: DailyResetState) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(DAILY_RESET_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error('Error saving daily reset state:', e);
+  }
+}
+
+function checkAndPerformDailyReset(): { resetPerformed: boolean; state: DailyResetState } {
+  const state = getDailyResetState();
+  const today = getServerTodayString();
+
+  if (today !== state.lastResetDate) {
+    console.log(`[DAILY RESET ENGINE] Midnight day rollover detected: ${state.lastResetDate} -> ${today}. Performing automatic daily slot reset...`);
+    state.lastResetDate = today;
+    state.lastResetTimestamp = new Date().toISOString();
+    state.history.unshift({
+      date: today,
+      timestamp: new Date().toISOString(),
+      reason: 'Automatic Midnight Rollover',
+    });
+    if (state.history.length > 30) state.history = state.history.slice(0, 30);
+    saveDailyResetState(state);
+    return { resetPerformed: true, state };
+  }
+
+  return { resetPerformed: false, state };
+}
+
+// Background timer checking every 30 seconds for automatic midnight rollover
+setInterval(() => {
+  try {
+    checkAndPerformDailyReset();
+  } catch (err) {
+    console.error('Error checking daily reset interval:', err);
+  }
+}, 30000);
+
 // 4. Get all patient records from backend Excel
 app.get('/api/patients', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    checkAndPerformDailyReset();
     const records = getOrInitExcelFile();
     res.json({
       success: true,
@@ -1747,6 +1884,7 @@ app.get('/api/patients', (req, res) => {
 // 5. Look up a single booking by Ref ID
 app.get('/api/bookings/:ref', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const ref = req.params.ref.toUpperCase();
     const records = getOrInitExcelFile();
     const record = records.find((r) => r.bookingRef.toUpperCase() === ref);
@@ -1762,6 +1900,8 @@ app.get('/api/bookings/:ref', (req, res) => {
 // 5.5 Query live booked slots for a given date, doctor, and branch
 app.get('/api/slots', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    checkAndPerformDailyReset();
     const { date, doctor, branch } = req.query;
     const records = getOrInitExcelFile();
     const dateStr = typeof date === 'string' ? date.trim() : '';
@@ -1770,8 +1910,8 @@ app.get('/api/slots', (req, res) => {
 
     const matchingBookings = records.filter((r) => {
       // Exclude cancelled bookings from blocking slots
-      if (r.status && r.status.toLowerCase() === 'cancelled') return false;
-      const matchDate = !dateStr || r.appointmentDate === dateStr;
+      if (r.status && r.status.toLowerCase().includes('cancel')) return false;
+      const matchDate = !dateStr || isServerSameDate(r.appointmentDate, dateStr);
       const matchDoc = !docStr || !r.doctorName || r.doctorName.toLowerCase().trim() === docStr;
       const matchBranch = !branchStr || !r.branchName || r.branchName.toLowerCase().includes(branchStr) || (r.branchId && r.branchId.toLowerCase() === branchStr);
       return matchDate && matchDoc && matchBranch;
@@ -1792,11 +1932,91 @@ app.get('/api/slots', (req, res) => {
   }
 });
 
+// 5.6 Daily Reset Status endpoint
+app.get('/api/slots/daily-status', (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const { resetPerformed, state } = checkAndPerformDailyReset();
+    const today = getServerTodayString();
+    res.json({
+      success: true,
+      today,
+      lastResetDate: state.lastResetDate,
+      lastResetTimestamp: state.lastResetTimestamp,
+      autoResetEnabled: state.autoResetEnabled,
+      nextScheduledReset: 'Tonight at 12:00 AM (Midnight)',
+      resetPerformed,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch daily reset status' });
+  }
+});
+
+// 5.7 Force / Test Daily Reset endpoint (resets today's slots so they become available again)
+app.post('/api/slots/daily-reset', (req, res) => {
+  try {
+    const today = getServerTodayString();
+    const state = getDailyResetState();
+    state.lastResetDate = today;
+    state.lastResetTimestamp = new Date().toISOString();
+    state.history.unshift({
+      date: today,
+      timestamp: new Date().toISOString(),
+      reason: 'Manual / On-Demand Daily Reset',
+    });
+    if (state.history.length > 30) state.history = state.history.slice(0, 30);
+    saveDailyResetState(state);
+
+    // Cancel or release today's bookings in Excel records so all slots unlock
+    const records = getOrInitExcelFile();
+    let releasedCount = 0;
+    records.forEach((r) => {
+      if (isServerSameDate(r.appointmentDate, today) && (!r.status || !r.status.toLowerCase().includes('cancel'))) {
+        r.status = 'Cancelled (Daily Reset)';
+        releasedCount++;
+      }
+    });
+    if (releasedCount > 0) {
+      writeExcelFile(records);
+    }
+
+    res.json({
+      success: true,
+      message: `Daily slots reset successfully for ${today}. Released ${releasedCount} booked slot(s). All time slots including 9:00 AM are now available!`,
+      releasedCount,
+      lastResetTimestamp: state.lastResetTimestamp,
+    });
+  } catch (err) {
+    console.error('Error executing daily reset:', err);
+    res.status(500).json({ success: false, error: 'Failed to execute daily reset' });
+  }
+});
+
 // 6. Add a new patient appointment to backend Excel sheet
 app.post('/api/bookings', (req, res) => {
   try {
     const body = req.body;
     const records = getOrInitExcelFile();
+
+    const targetDate = body.appointmentDate || getServerTodayString();
+    const targetTime = body.appointmentTime || '10:00 AM';
+    const targetDoc = body.doctorName || 'Dr. Vikram Shah';
+
+    // Prevent duplicate booking for the same slot on the same date for this doctor
+    const isSlotTaken = records.some((r) => {
+      if (r.status && r.status.toLowerCase().includes('cancel')) return false;
+      const matchDate = isServerSameDate(r.appointmentDate, targetDate);
+      const matchTime = isServerTimeMatch(r.appointmentTime, targetTime);
+      const matchDoc = !r.doctorName || !targetDoc || r.doctorName.toLowerCase().trim() === targetDoc.toLowerCase().trim();
+      return matchDate && matchTime && matchDoc;
+    });
+
+    if (isSlotTaken) {
+      return res.status(409).json({
+        success: false,
+        error: `The ${targetTime} slot on ${targetDate} is already booked and cannot be selected. Time slots reset automatically every day at 12:00 AM midnight.`,
+      });
+    }
 
     const newRecord: PatientRecord = {
       bookingRef: body.bookingRef || `SC${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
@@ -1821,6 +2041,12 @@ app.post('/api/bookings', (req, res) => {
       appointmentTime: body.appointmentTime || '10:00 AM',
       notes: body.notes || 'None',
       status: 'Confirmed',
+      paymentMode: body.paymentMode || 'Pay at Clinic Counter',
+      paymentStatus: body.paymentStatus || 'Pending at Counter',
+      paymentRef: body.paymentRef || 'N/A',
+      amountPaidNow: body.amountPaidNow || '₹0',
+      amountRemaining: body.amountRemaining || body.estimatedFee || '₹0',
+      attachmentName: body.attachmentName || 'None',
     };
 
     records.unshift(newRecord);
@@ -1932,6 +2158,34 @@ app.get('/api/patients/history', (req, res) => {
 
     const latestPatient = matched[0];
 
+    // Compute previous transactions & payment history for current patient
+    const paymentHistory = matched.map((r, idx) => {
+      const amountVal = (r.amountPaidNow && r.amountPaidNow !== '₹0' && r.amountPaidNow !== '0')
+        ? r.amountPaidNow
+        : (r.paymentStatus === 'Verified' || (r.paymentRef && r.paymentRef !== 'N/A'))
+          ? (r.estimatedFee || '₹500')
+          : (r.amountPaidNow || r.estimatedFee || '₹0');
+
+      return {
+        id: r.paymentRef && r.paymentRef !== 'N/A' ? r.paymentRef : `TXN-${r.bookingRef || idx + 1}`,
+        bookingRef: r.bookingRef,
+        date: r.bookingDate || r.appointmentDate || todayStr,
+        appointmentDate: r.appointmentDate,
+        amount: amountVal.startsWith('₹') ? amountVal : `₹${amountVal}`,
+        treatmentName: r.treatmentName || 'Dental Consultation',
+        doctorName: r.doctorName || 'Dentist',
+        branchName: r.branchName || 'Smart Dental Clinic',
+        paymentMode: r.paymentMode || 'Clinic Counter',
+        paymentStatus: r.paymentStatus || (r.status === 'Cancelled' ? 'Refunded' : 'Completed'),
+        paymentRef: r.paymentRef && r.paymentRef !== 'N/A' ? r.paymentRef : `REF-${r.bookingRef}`,
+      };
+    });
+
+    const totalPaidNum = paymentHistory.reduce((acc, t) => {
+      const num = parseInt(t.amount.replace(/[^0-9]/g, ''), 10);
+      return acc + (isNaN(num) ? 0 : num);
+    }, 0);
+
     res.json({
       success: true,
       query: rawQuery,
@@ -1949,11 +2203,81 @@ app.get('/api/patients/history', (req, res) => {
         upcomingCount: upcoming.length,
         pastCount: past.length,
         cancelledCount: matched.filter((r) => r.status === 'Cancelled').length,
+        totalPaid: `₹${totalPaidNum.toLocaleString('en-IN')}`,
+        transactionsCount: paymentHistory.length,
       },
+      paymentHistory,
       records: matched,
     });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to retrieve patient history' });
+  }
+});
+
+// 7.1 Patient Payment History Endpoint
+app.get('/api/patients/payments', (req, res) => {
+  try {
+    const rawQuery = String(req.query.query || req.query.phone || req.query.ref || '').trim();
+    const records = getOrInitExcelFile();
+    let matched = records;
+
+    if (rawQuery) {
+      const cleanDigits = rawQuery.replace(/[^0-9]/g, '');
+      const queryUpper = rawQuery.toUpperCase();
+      const queryLower = rawQuery.toLowerCase();
+
+      matched = records.filter((r) => {
+        if (r.bookingRef && r.bookingRef.toUpperCase() === queryUpper) return true;
+        if (cleanDigits.length >= 6) {
+          const recordDigits = (r.phone || '').replace(/[^0-9]/g, '');
+          if (recordDigits.includes(cleanDigits) || cleanDigits.includes(recordDigits)) return true;
+          if (recordDigits.slice(-10) === cleanDigits.slice(-10)) return true;
+        }
+        if (queryLower.includes('@') && r.email && r.email.toLowerCase() === queryLower) return true;
+        if (cleanDigits.length < 5 && queryLower.length >= 3 && r.patientName && r.patientName.toLowerCase().includes(queryLower)) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const transactions = matched.map((r, idx) => {
+      const amountVal = (r.amountPaidNow && r.amountPaidNow !== '₹0' && r.amountPaidNow !== '0')
+        ? r.amountPaidNow
+        : (r.paymentStatus === 'Verified' || (r.paymentRef && r.paymentRef !== 'N/A'))
+          ? (r.estimatedFee || '₹500')
+          : (r.amountPaidNow || r.estimatedFee || '₹0');
+
+      return {
+        id: r.paymentRef && r.paymentRef !== 'N/A' ? r.paymentRef : `TXN-${r.bookingRef || idx + 1}`,
+        bookingRef: r.bookingRef,
+        date: r.bookingDate || r.appointmentDate || todayStr,
+        appointmentDate: r.appointmentDate,
+        amount: amountVal.startsWith('₹') ? amountVal : `₹${amountVal}`,
+        treatmentName: r.treatmentName || 'Dental Consultation',
+        doctorName: r.doctorName || 'Dentist',
+        branchName: r.branchName || 'Smart Dental Clinic',
+        paymentMode: r.paymentMode || 'Clinic Counter',
+        paymentStatus: r.paymentStatus || (r.status === 'Cancelled' ? 'Refunded' : 'Completed'),
+        paymentRef: r.paymentRef && r.paymentRef !== 'N/A' ? r.paymentRef : `REF-${r.bookingRef}`,
+      };
+    });
+
+    const totalPaidNum = transactions.reduce((acc, t) => {
+      const num = parseInt(t.amount.replace(/[^0-9]/g, ''), 10);
+      return acc + (isNaN(num) ? 0 : num);
+    }, 0);
+
+    res.json({
+      success: true,
+      query: rawQuery,
+      totalPaid: `₹${totalPaidNum.toLocaleString('en-IN')}`,
+      transactionsCount: transactions.length,
+      transactions,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to retrieve payment history' });
   }
 });
 
@@ -2000,6 +2324,66 @@ app.post('/api/bookings/:ref/cancel', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to cancel appointment' });
+  }
+});
+
+// 7.55 Reschedule an appointment
+app.post('/api/bookings/:ref/reschedule', (req, res) => {
+  try {
+    const ref = req.params.ref.toUpperCase();
+    const { date, time, reason = 'Patient requested new slot' } = req.body;
+    if (!date || !time) {
+      return res.status(400).json({ success: false, error: 'Both date and time are required for rescheduling' });
+    }
+
+    const records = getOrInitExcelFile();
+    const recordIndex = records.findIndex((r) => r.bookingRef.toUpperCase() === ref);
+    if (recordIndex === -1) {
+      return res.status(404).json({ success: false, error: 'Booking reference not found' });
+    }
+
+    const prevDate = records[recordIndex].appointmentDate;
+    const prevTime = records[recordIndex].appointmentTime;
+
+    records[recordIndex].appointmentDate = date;
+    records[recordIndex].appointmentTime = time;
+    records[recordIndex].status = 'Confirmed';
+    const rescheduleNote = `[Rescheduled from ${prevDate} ${prevTime}: ${reason}]`;
+    records[recordIndex].notes = records[recordIndex].notes
+      ? `${records[recordIndex].notes} ${rescheduleNote}`
+      : rescheduleNote;
+
+    writeExcelFile(records);
+
+    // Update reminder timing in reminders store
+    const remindersStore = getRemindersStore();
+    if (remindersStore[ref]) {
+      const timing = calculateReminderTimes(date, time);
+      remindersStore[ref].appointmentDate = date;
+      remindersStore[ref].appointmentTime = time;
+      remindersStore[ref].scheduledDispatchTime = timing.scheduledDispatchTime;
+      remindersStore[ref].scheduledDispatchFormatted = timing.scheduledDispatchFormatted;
+      remindersStore[ref].earlyArrivalTime = timing.earlyArrivalTime;
+      remindersStore[ref].status = 'SCHEDULED';
+      remindersStore[ref].logs.push({
+        id: `LOG_${Date.now()}_RESCHEDULE`,
+        type: 'SMS',
+        recipient: records[recordIndex].phone || '',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        status: 'DELIVERED',
+        gatewayId: `SMS_RESCHED_${Math.floor(100000 + Math.random() * 900000)}`,
+        message: `Appointment ${ref} rescheduled to ${date} at ${time}.`,
+      });
+      saveRemindersStore(remindersStore);
+    }
+
+    res.json({
+      success: true,
+      message: `Appointment ${ref} has been rescheduled to ${date} at ${time}.`,
+      data: records[recordIndex],
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to reschedule appointment' });
   }
 });
 
@@ -2396,7 +2780,7 @@ app.get('/api/patients/export-excel', (req, res) => {
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="SmileCare_Patients_Records.xlsx"');
+    res.setHeader('Content-Disposition', 'attachment; filename="SmartDental_Patients_Records.xlsx"');
     
     const fileStream = fs.createReadStream(EXCEL_FILE_PATH);
     fileStream.pipe(res);
@@ -2407,12 +2791,179 @@ app.get('/api/patients/export-excel', (req, res) => {
 });
 
 // ==========================================
+// 10. Gemini AI Endpoints
+// ==========================================
+
+// Check AI status
+app.get('/api/ai/status', (req, res) => {
+  res.json({
+    success: true,
+    isConfigured: isGeminiConfigured(),
+    model: 'gemini-3.8-flash',
+    features: [
+      'AI Appointment Assistance & Triage',
+      'Automated Patient Responses (WhatsApp / Reception Desk)',
+      'Smart Procedure-Specific Appointment Reminders',
+      'AI-Based Patient & Clinic Insights',
+    ],
+  });
+});
+
+// AI Appointment Assistant (Triage & Clinic Concierge)
+app.post('/api/ai/assistant', async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ success: false, error: 'Message text is required' });
+    }
+
+    const clinicProfile = getOrInitClinicProfile();
+    const treatments = getOrInitTreatments();
+    const doctors = getOrInitDoctors();
+    const branches = getOrInitBranches();
+
+    const result = await handleAppointmentAssistant({
+      message,
+      history,
+      clinicContext: {
+        clinicName: clinicProfile.name || 'Smart Dental Clinic',
+        phone: clinicProfile.phone || '+91 98765 00000',
+        treatments: treatments.map((t) => ({
+          id: t.id,
+          name: t.name,
+          price: t.price,
+          dur: t.dur,
+          desc: t.desc,
+        })),
+        doctors: doctors.map((d) => ({
+          id: d.id,
+          name: d.name,
+          spec: d.spec,
+          qualifications: d.qualifications,
+          experience: d.experience,
+        })),
+        branches: branches.map((b) => ({
+          id: b.id,
+          shortName: b.shortName,
+          address: b.address,
+          phone: b.phone,
+        })),
+      },
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error in /api/ai/assistant:', err);
+    res.status(500).json({ success: false, error: err.message || 'AI Assistant error' });
+  }
+});
+
+// Automated Patient Responses (Reception Desk / WhatsApp Generator)
+app.post('/api/ai/patient-response', async (req, res) => {
+  try {
+    const { patientQuery, patientName, channel, topic } = req.body;
+    if (!patientQuery || typeof patientQuery !== 'string') {
+      return res.status(400).json({ success: false, error: 'Patient query is required' });
+    }
+
+    const clinicProfile = getOrInitClinicProfile();
+    const timings = getOrInitTimings();
+
+    const result = await handleAutomatedPatientResponse({
+      patientQuery,
+      patientName,
+      channel,
+      topic,
+      clinicContext: {
+        clinicName: clinicProfile.name || 'Smart Dental Clinic',
+        phone: clinicProfile.phone || '+91 98765 00000',
+        emergencyPhone: clinicProfile.emergencyPhone || '+91 98765 00000',
+        timings: timings.announcement || 'Mon – Sat: 9:00 AM – 8:00 PM',
+        address: clinicProfile.address || '102 Wellness Plaza, Dental Street',
+      },
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error in /api/ai/patient-response:', err);
+    res.status(500).json({ success: false, error: err.message || 'AI Response error' });
+  }
+});
+
+// Smart Appointment Reminders
+app.post('/api/ai/smart-reminder', async (req, res) => {
+  try {
+    const {
+      bookingRef,
+      patientName,
+      treatmentName,
+      doctorName,
+      appointmentDate,
+      appointmentTime,
+      branchName,
+      branchAddress,
+      notes,
+    } = req.body;
+
+    const clinicProfile = getOrInitClinicProfile();
+
+    const result = await handleSmartReminder({
+      bookingRef: bookingRef || 'REF-APP',
+      patientName: patientName || 'Valued Patient',
+      treatmentName: treatmentName || 'Dental Consultation',
+      doctorName: doctorName || 'Attending Dentist',
+      appointmentDate: appointmentDate || 'Upcoming Date',
+      appointmentTime: appointmentTime || 'Scheduled Time',
+      branchName: branchName || 'Downtown Central',
+      branchAddress: branchAddress || clinicProfile.address,
+      notes: notes || '',
+      clinicContext: {
+        clinicName: clinicProfile.name || 'Smart Dental Clinic',
+        phone: clinicProfile.phone || '+91 98765 00000',
+      },
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error in /api/ai/smart-reminder:', err);
+    res.status(500).json({ success: false, error: err.message || 'AI Reminder error' });
+  }
+});
+
+// AI-Based Patient / Clinic Insights
+app.post('/api/ai/clinic-insights', async (req, res) => {
+  try {
+    const records = getOrInitExcelFile();
+    const treatments = getOrInitTreatments();
+    const doctors = getOrInitDoctors();
+    const branches = getOrInitBranches();
+    const clinicProfile = getOrInitClinicProfile();
+
+    const result = await handleClinicInsights({
+      records,
+      treatments,
+      doctors,
+      branches,
+      clinicProfile,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error in /api/ai/clinic-insights:', err);
+    res.status(500).json({ success: false, error: err.message || 'AI Insights error' });
+  }
+});
+
+// ==========================================
 // Vite / Static Serving
 // ==========================================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -2425,7 +2976,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SmileCare Dental server running on http://localhost:${PORT}`);
+    console.log(`Smart Dental Clinic server running on http://localhost:${PORT}`);
   });
 }
 
