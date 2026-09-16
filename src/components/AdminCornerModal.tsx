@@ -58,6 +58,18 @@ import {
 } from '../types';
 import { AiClinicInsightsView } from './AiClinicInsightsView';
 import { AdminSummaryDashboard } from './AdminSummaryDashboard';
+import {
+  getCachedClinicProfile,
+  saveCachedClinicProfile,
+  getCachedBranches,
+  saveCachedBranches,
+  getCachedTreatments,
+  saveCachedTreatments,
+  getCachedDoctors,
+  saveCachedDoctors,
+  getCachedTimings,
+  saveCachedTimings,
+} from '../utils/offlineEngine';
 
 const formatSlotTime = (t: string): string => {
   if (!t) return '';
@@ -199,17 +211,26 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
 
       if (treatRes.ok) {
         const treatData = await treatRes.json();
-        if (treatData.data) setTreatments(treatData.data);
+        if (treatData.data) {
+          setTreatments(treatData.data);
+          saveCachedTreatments(treatData.data);
+        }
       }
 
       if (docRes.ok) {
         const docData = await docRes.json();
-        if (docData.data) setDoctors(docData.data);
+        if (docData.data) {
+          setDoctors(docData.data);
+          saveCachedDoctors(docData.data);
+        }
       }
 
       if (timingsRes.ok) {
         const timingsData = await timingsRes.json();
-        if (timingsData.data) setTimings(timingsData.data);
+        if (timingsData.data) {
+          setTimings(timingsData.data);
+          saveCachedTimings(timingsData.data);
+        }
       }
 
       if (profileRes.ok) {
@@ -217,6 +238,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         if (pData.data) {
           setClinicProfile(pData.data);
           setProfileForm(pData.data);
+          saveCachedClinicProfile(pData.data);
           if (onClinicProfileUpdated) onClinicProfileUpdated(pData.data);
         }
       }
@@ -225,6 +247,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         const bData = await branchRes.json();
         if (Array.isArray(bData.data) && bData.data.length > 0) {
           setBranches(bData.data);
+          saveCachedBranches(bData.data);
           setSelectedBranchId((prevId) => {
             const exists = bData.data.some((b: ClinicBranch) => b.id === prevId);
             const targetId = exists ? prevId : bData.data[0].id;
@@ -245,7 +268,16 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         }
       }
     } catch (err) {
-      console.error('Failed to load admin data:', err);
+      console.warn('Failed to load live admin data, falling back to local cache:', err);
+      // Offline fallback
+      setTreatments(getCachedTreatments());
+      setDoctors(getCachedDoctors());
+      setBranches(getCachedBranches());
+      const cProfile = getCachedClinicProfile();
+      setClinicProfile(cProfile);
+      setProfileForm(cProfile);
+      const cTimings = getCachedTimings();
+      if (cTimings) setTimings(cTimings);
     } finally {
       setIsLoadingData(false);
     }

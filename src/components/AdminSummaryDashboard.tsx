@@ -28,6 +28,7 @@ import {
   Cell,
 } from 'recharts';
 import { PatientRecord, Treatment, ClinicBranch } from '../types';
+import { getLocalCachedPatientRecords } from '../utils/offlineEngine';
 
 interface AdminSummaryDashboardProps {
   treatments: Treatment[];
@@ -63,7 +64,7 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
   const [sortBy, setSortBy] = useState<'count_desc' | 'count_asc' | 'name_asc'>('count_desc');
   const [activeViewMode, setActiveViewMode] = useState<'both' | 'chart' | 'table'>('both');
 
-  // Fetch patient records from backend Excel storage
+  // Fetch patient records from backend Excel storage (with offline cache fallback)
   const fetchRecords = async () => {
     setIsLoading(true);
     setError('');
@@ -77,8 +78,14 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
         setRecords([]);
       }
     } catch (err: any) {
-      console.error('Error fetching records for dashboard:', err);
-      setError('Unable to load latest booking records from server.');
+      console.warn('Network offline or error fetching records for dashboard. Using local cache:', err);
+      const cached = getLocalCachedPatientRecords();
+      if (cached.length > 0) {
+        setRecords(cached);
+        setError('');
+      } else {
+        setError('Unable to load latest booking records from server.');
+      }
     } finally {
       setIsLoading(false);
     }

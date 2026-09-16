@@ -21,6 +21,10 @@ import {
 import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
 import { cleanPhoneNumber } from './WhatsAppShareModal';
 import { PrintSummaryModal } from './PrintSummaryModal';
+import {
+  getLocalCachedPatientRecords,
+  saveLocalCachedPatientRecords,
+} from '../utils/offlineEngine';
 
 interface ExcelDatabaseModalProps {
   isOpen: boolean;
@@ -38,7 +42,7 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
   onOpenSmartReminder,
   onOpenAiInsights,
 }) => {
-  const [records, setRecords] = useState<PatientRecord[]>([]);
+  const [records, setRecords] = useState<PatientRecord[]>(() => getLocalCachedPatientRecords());
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRecord, setSelectedRecord] = useState<PatientRecord | null>(null);
@@ -55,10 +59,15 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setRecords(json.data);
+          saveLocalCachedPatientRecords(json.data);
         }
       }
     } catch (err) {
-      console.error('Failed to load patient records from backend Excel:', err);
+      console.warn('Network offline or error. Using locally cached records:', err);
+      const cached = getLocalCachedPatientRecords();
+      if (cached.length > 0) {
+        setRecords(cached);
+      }
     } finally {
       setLoading(false);
     }

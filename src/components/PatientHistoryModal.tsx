@@ -28,6 +28,7 @@ import {
 import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE, PaymentTransaction } from '../types';
 import { SmartDentalLogo } from './SmartDentalLogo';
 import { PrintSummaryModal } from './PrintSummaryModal';
+import { getLocalCachedPatientRecords } from '../utils/offlineEngine';
 import { PaymentHistoryList } from './PaymentHistoryList';
 
 interface PatientHistoryModalProps {
@@ -157,10 +158,45 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
         setPaymentHistory([]);
       }
     } catch (err) {
-      setError('Network error occurred while fetching patient history.');
-      setRecords([]);
-      setPatientProfile(null);
-      setPaymentHistory([]);
+      console.warn('Network offline while fetching patient history, searching local cache:', err);
+      const cachedAll = getLocalCachedPatientRecords();
+      const normQ = q.toLowerCase().trim();
+      const matching = cachedAll.filter((r) => {
+        const phone = (r.phone || '').replace(/\D/g, '');
+        const ref = (r.bookingRef || '').toLowerCase();
+        const searchDigits = q.replace(/\D/g, '');
+        return (
+          (searchDigits.length >= 4 && phone.includes(searchDigits)) ||
+          ref === normQ ||
+          (r.patientName && r.patientName.toLowerCase().includes(normQ))
+        );
+      });
+
+      if (matching.length > 0) {
+        setRecords(matching);
+        const primary = matching[0];
+        setPatientProfile({
+          name: primary.patientName,
+          phone: primary.phone,
+          email: primary.email,
+          patientType: primary.patientType,
+        });
+        setPaymentHistory([]);
+        setStats({
+          totalBookings: matching.length,
+          upcomingCount: matching.filter((m) => !m.status?.toLowerCase().includes('cancel')).length,
+          pastCount: 0,
+          cancelledCount: matching.filter((m) => m.status?.toLowerCase().includes('cancel')).length,
+          totalPaid: primary.amountPaidNow || '₹0',
+          transactionsCount: 1,
+        });
+        setError('');
+      } else {
+        setError('No appointments found offline for this number. Check your internet connection.');
+        setRecords([]);
+        setPatientProfile(null);
+        setPaymentHistory([]);
+      }
     } finally {
       setIsLoading(false);
     }

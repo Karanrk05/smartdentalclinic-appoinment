@@ -20,6 +20,17 @@ import { MobileAppTabBar } from './components/MobileAppTabBar';
 import { GENERAL_TREATMENTS } from './data/treatments';
 import { BookingState, Doctor, PatientDetails, Treatment, ClinicProfile, DEFAULT_CLINIC_PROFILE, ClinicBranch, DEFAULT_BRANCHES } from './types';
 import { addLocalBookedSlot, checkClientDailyReset } from './utils/slotManager';
+import {
+  getCachedClinicProfile,
+  saveCachedClinicProfile,
+  getCachedBranches,
+  saveCachedBranches,
+  getCachedTreatments,
+  saveCachedTreatments,
+  getCachedDoctors,
+  saveCachedDoctors,
+  enqueueOfflineBooking,
+} from './utils/offlineEngine';
 
 const STORAGE_KEY = 'smartdental_booking_draft';
 const STEP_STORAGE_KEY = 'smartdental_booking_step';
@@ -129,19 +140,20 @@ export default function App() {
   const [patientHistoryQuery, setPatientHistoryQuery] = useState<string>('');
   const [isAiPatientResponseOpen, setIsAiPatientResponseOpen] = useState<boolean>(false);
   const [smartReminderAppointment, setSmartReminderAppointment] = useState<SmartReminderData | null>(null);
-  const [treatmentsList, setTreatmentsList] = useState<Treatment[]>(GENERAL_TREATMENTS);
-  const [doctorsList, setDoctorsList] = useState<Doctor[]>([]);
-  const [branchesList, setBranchesList] = useState<ClinicBranch[]>(DEFAULT_BRANCHES);
+  const [treatmentsList, setTreatmentsList] = useState<Treatment[]>(() => getCachedTreatments());
+  const [doctorsList, setDoctorsList] = useState<Doctor[]>(() => getCachedDoctors());
+  const [branchesList, setBranchesList] = useState<ClinicBranch[]>(() => getCachedBranches());
   const [dataRefreshCounter, setDataRefreshCounter] = useState<number>(0);
-  const [clinicProfile, setClinicProfile] = useState<ClinicProfile>(DEFAULT_CLINIC_PROFILE);
+  const [clinicProfile, setClinicProfile] = useState<ClinicProfile>(() => getCachedClinicProfile());
 
-  // Fetch clinic profile and clinical catalogs on mount and on admin refresh
+  // Fetch clinic profile and clinical catalogs on mount and on admin refresh, saving to offline cache
   useEffect(() => {
     fetch('/api/clinic-profile')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && data.success && data.data) {
           setClinicProfile(data.data);
+          saveCachedClinicProfile(data.data);
         }
       })
       .catch((err) => console.error('Failed to fetch clinic profile:', err));
@@ -151,6 +163,7 @@ export default function App() {
       .then((data) => {
         if (data && data.success && Array.isArray(data.data)) {
           setTreatmentsList(data.data);
+          saveCachedTreatments(data.data);
         }
       })
       .catch(() => {});
@@ -160,6 +173,7 @@ export default function App() {
       .then((data) => {
         if (data && data.success && Array.isArray(data.data)) {
           setDoctorsList(data.data);
+          saveCachedDoctors(data.data);
         }
       })
       .catch(() => {});
@@ -169,6 +183,7 @@ export default function App() {
       .then((data) => {
         if (data && data.success && Array.isArray(data.data)) {
           setBranchesList(data.data);
+          saveCachedBranches(data.data);
         }
       })
       .catch(() => {});
@@ -267,49 +282,64 @@ export default function App() {
       });
     }
 
-    // Persist to backend Excel file storage via /api/bookings
-    try {
-      await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bookingRef: ref,
-          branchId: booking.branch?.id || 'branch-1',
-          branchName: booking.branch?.name || clinicProfile.name,
-          branchAddress: booking.branch?.address
-            ? `${booking.branch.address}, ${booking.branch.areaCityPincode}`
-            : clinicProfile.address,
-          branchPhone: booking.branch?.phone || clinicProfile.phone,
-          firstName: booking.patient.firstName,
-          lastName: booking.patient.lastName,
-          phone: booking.patient.phone,
-          email: booking.patient.email,
-          dob: booking.patient.dob || 'Not specified',
-          patientType: booking.patient.patientType || 'New patient',
-          treatmentName: booking.treatment?.name || 'General Dental Service',
-          treatmentDuration: booking.treatment?.dur || '30 min',
-          estimatedFee: booking.treatment?.price || '₹300 – ₹800',
-          doctorName: booking.doctor?.name || 'Dr. Vikram Shah',
-          doctorSpecialization: booking.doctor?.spec || 'General Dental Surgeon',
-          appointmentDate: formattedDate,
-          appointmentTime: formattedTime,
-          notes: booking.patient.notes || 'None',
-          paymentMode: Number(booking.patient.amountPaidNow || 0) > 0
-            ? `Advance Paid (₹${booking.patient.amountPaidNow})`
-            : booking.patient.paymentMethod === 'online_token'
-              ? 'Online Token (₹200)'
-              : 'Pay at Clinic Counter',
-          paymentStatus: Number(booking.patient.amountPaidNow || 0) > 0
-            ? `Advance Paid (₹${booking.patient.amountPaidNow}) · Remaining ${booking.patient.amountRemaining || 'at clinic'}`
-            : 'Pending at Clinic Counter',
-          paymentRef: booking.patient.paymentRef || 'N/A',
-          amountPaidNow: booking.patient.amountPaidNow ? `₹${booking.patient.amountPaidNow}` : '₹0',
-          amountRemaining: booking.patient.amountRemaining || booking.treatment?.price || '₹0',
-          attachmentName: booking.patient.attachmentName ? `${booking.patient.attachmentName} (${booking.patient.attachmentSize || ''})` : 'None',
-        }),
-      });
-    } catch (err) {
-      console.error('Failed to sync booking to backend Excel:', err);
+    // Prepare booking payload
+    const bookingPayload = {
+      bookingRef: ref,
+      branchId: booking.branch?.id || 'branch-1',
+      branchName: booking.branch?.name || clinicProfile.name,
+      branchAddress: booking.branch?.address
+        ? `${booking.branch.address}, ${booking.branch.areaCityPincode}`
+        : clinicProfile.address,
+      branchPhone: booking.branch?.phone || clinicProfile.phone,
+      firstName: booking.patient.firstName,
+      lastName: booking.patient.lastName,
+      phone: booking.patient.phone,
+      email: booking.patient.email,
+      dob: booking.patient.dob || 'Not specified',
+      patientType: booking.patient.patientType || 'New patient',
+      treatmentName: booking.treatment?.name || 'General Dental Service',
+      treatmentDuration: booking.treatment?.dur || '30 min',
+      estimatedFee: booking.treatment?.price || '₹300 – ₹800',
+      doctorName: booking.doctor?.name || 'Dr. Vikram Shah',
+      doctorSpecialization: booking.doctor?.spec || 'General Dental Surgeon',
+      appointmentDate: formattedDate,
+      appointmentTime: formattedTime,
+      notes: booking.patient.notes || 'None',
+      paymentMode: Number(booking.patient.amountPaidNow || 0) > 0
+        ? `Advance Paid (₹${booking.patient.amountPaidNow})`
+        : booking.patient.paymentMethod === 'online_token'
+          ? 'Online Token (₹200)'
+          : 'Pay at Clinic Counter',
+      paymentStatus: Number(booking.patient.amountPaidNow || 0) > 0
+        ? `Advance Paid (₹${booking.patient.amountPaidNow}) · Remaining ${booking.patient.amountRemaining || 'at clinic'}`
+        : 'Pending at Clinic Counter',
+      paymentRef: booking.patient.paymentRef || 'N/A',
+      amountPaidNow: booking.patient.amountPaidNow ? `₹${booking.patient.amountPaidNow}` : '₹0',
+      amountRemaining: booking.patient.amountRemaining || booking.treatment?.price || '₹0',
+      attachmentName: booking.patient.attachmentName ? `${booking.patient.attachmentName} (${booking.patient.attachmentSize || ''})` : 'None',
+    };
+
+    // Check online status
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+    if (!isOnline) {
+      // Offline mode: Queue booking locally
+      enqueueOfflineBooking(bookingPayload, ref);
+    } else {
+      // Persist to backend Excel file storage via /api/bookings
+      try {
+        const response = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bookingPayload),
+        });
+        if (!response.ok) {
+          enqueueOfflineBooking(bookingPayload, ref);
+        }
+      } catch (err) {
+        console.warn('Network issue while booking. Queued offline for auto-sync:', err);
+        enqueueOfflineBooking(bookingPayload, ref);
+      }
     }
 
     try {
