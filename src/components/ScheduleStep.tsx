@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Clock, Ban, Check, Sparkles, Sun, Coffee, Building2, RefreshCw, AlertCircle } from 'lucide-react';
-import { Doctor, Treatment, PatientRecord, ClinicTimings, ClinicBranch } from '../types';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Clock, Ban, Check, Sparkles, Sun, Coffee, Building2, RefreshCw, AlertCircle, Zap, BellRing, ExternalLink } from 'lucide-react';
+import { Doctor, Treatment, PatientRecord, ClinicTimings, ClinicBranch, WaitlistEntry } from '../types';
+import { JoinWaitlistModal } from './JoinWaitlistModal';
 import {
   formatSlotTime,
   formatLocalDate,
@@ -23,6 +24,7 @@ interface ScheduleStepProps {
   onNext: () => void;
   refreshTrigger?: number;
   branch?: ClinicBranch | null;
+  autoAdvanceEnabled?: boolean;
 }
 
 const MONTHS = [
@@ -69,6 +71,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   onNext,
   refreshTrigger = 0,
   branch,
+  autoAdvanceEnabled = true,
 }) => {
   const today = new Date();
   const [bookedRecords, setBookedRecords] = useState<PatientRecord[]>([]);
@@ -76,6 +79,20 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   const [localRefreshCounter, setLocalRefreshCounter] = useState<number>(0);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [resetNotification, setResetNotification] = useState<string | null>(null);
+  const [advancingSlot, setAdvancingSlot] = useState<string | null>(null);
+  const [waitlistModalSlot, setWaitlistModalSlot] = useState<string | null>(null);
+  const [waitlistedKeys, setWaitlistedKeys] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('sdc_user_waitlist_slots') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [waitlistSuccessToast, setWaitlistSuccessToast] = useState<{
+    slot: string;
+    phone: string;
+    whatsappUrl?: string;
+  } | null>(null);
   const [viewYear, setViewYear] = useState<number>(
     selectedDate ? selectedDate.getFullYear() : today.getFullYear()
   );
@@ -477,17 +494,30 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
       {selectedDate && (
         <div className="space-y-3 pt-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-extrabold text-[#0f172a]">
-              <Clock className="w-4 h-4 text-[#2563eb] shrink-0" />
-              <span>
-                Available times on{' '}
-                {selectedDate.toLocaleDateString('en-IN', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </span>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-extrabold text-[#0f172a]">
+                <Clock className="w-4 h-4 text-[#2563eb] shrink-0" />
+                <span>
+                  Available times on{' '}
+                  {selectedDate.toLocaleDateString('en-IN', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap pl-5 sm:pl-6">
+                <span className="text-[11px] text-[#64748b] font-medium">
+                  Click any available slot to select
+                </span>
+                {autoAdvanceEnabled && (
+                  <span className="text-[10px] text-blue-700 bg-blue-50/90 font-extrabold px-2 py-0.5 rounded-md border border-blue-200 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                    Auto-advances to details
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Live slot statistics */}
@@ -526,6 +556,39 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
             )}
           </div>
 
+          {/* Waitlist Success Notification Toast */}
+          {waitlistSuccessToast && (
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-xl p-3 sm:p-3.5 flex items-start gap-2.5 shadow-sm animate-fadeIn">
+              <Check className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs">
+                <p className="font-extrabold text-emerald-950">
+                  Priority Waitlist Active for {formatSlotTime(waitlistSuccessToast.slot)}!
+                </p>
+                <p className="text-emerald-800 text-[11px] mt-0.5">
+                  If this slot opens up, an automated WhatsApp alert will be dispatched to <strong>{waitlistSuccessToast.phone}</strong>.
+                </p>
+              </div>
+              {waitlistSuccessToast.whatsappUrl && (
+                <a
+                  href={waitlistSuccessToast.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 hover:text-emerald-950 underline shrink-0"
+                >
+                  <span>Test WhatsApp</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setWaitlistSuccessToast(null)}
+                className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-1.5 py-0.5 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Slots Grid */}
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 sm:gap-2.5 pt-1">
             {activeSlots.map((slot) => {
@@ -533,43 +596,73 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
               const isPaused = disabledSlots.includes(slot);
               const isSelected = selectedTime === slot;
               const isBlocked = isTaken || isPaused;
+              const isAdvancing = advancingSlot === slot;
+              const slotWaitlistKey = `${selectedDateStr}_${slot}_${selectedDoctor?.id || ''}`;
+              const isWaitlisted = waitlistedKeys.includes(slotWaitlistKey);
 
               return (
                 <button
                   key={slot}
                   id={`slot-${slot.replace(':', '-')}`}
                   type="button"
-                  disabled={isBlocked}
-                  onClick={() => onSelectTime(slot)}
+                  disabled={isPaused}
+                  onClick={() => {
+                    if (isTaken) {
+                      setWaitlistModalSlot(slot);
+                      return;
+                    }
+                    if (isPaused) return;
+                    setAdvancingSlot(slot);
+                    onSelectTime(slot);
+                  }}
                   title={
                     isTaken
-                      ? `${formatSlotTime(slot)} is already booked for this doctor`
+                      ? `${formatSlotTime(slot)} is already booked. Click to Join Waitlist for instant WhatsApp notification if released!`
                       : isPaused
                       ? `${formatSlotTime(slot)} is currently paused by clinic admin`
                       : `Select ${formatSlotTime(slot)}`
                   }
-                  className={`relative flex flex-col items-center justify-center py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs font-bold transition-all border-2 select-none min-h-[50px] ${
-                    isSelected
+                  className={`relative flex flex-col items-center justify-center py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs font-bold transition-all border-2 select-none min-h-[58px] ${
+                    isSelected || isAdvancing
                       ? 'bg-[#2563eb] border-[#2563eb] text-white shadow-md shadow-[#2563eb]/20 scale-[1.02]'
                       : isTaken
-                      ? 'bg-[#fdf2f2] border-red-200 text-red-400 cursor-not-allowed opacity-85'
+                      ? isWaitlisted
+                        ? 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100 cursor-pointer shadow-xs'
+                        : 'bg-red-50/60 border-red-200 text-slate-700 hover:bg-amber-50 hover:border-amber-300 cursor-pointer shadow-2xs group'
                       : isPaused
                       ? 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed opacity-60'
                       : 'bg-white border-[#dbeafe] text-[#0f172a] hover:border-[#2563eb] hover:text-[#2563eb] hover:bg-[#eff6ff] active:scale-95 cursor-pointer'
                   }`}
                 >
-                  <span className={`text-[11px] sm:text-xs ${isBlocked ? 'line-through text-slate-400 font-semibold' : 'font-extrabold'}`}>
+                  <span className={`text-[11px] sm:text-xs ${isBlocked && !isTaken ? 'line-through text-slate-400 font-semibold' : 'font-extrabold'}`}>
                     {formatSlotTime(slot)}
                   </span>
                   
                   {isTaken ? (
-                    <span className="mt-0.5 sm:mt-1 text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-red-700 bg-red-100/90 px-1 py-0.2 rounded flex items-center gap-0.5">
-                      <Ban className="w-2.5 h-2.5 text-red-700" />
-                      Booked
-                    </span>
+                    <div className="mt-1 flex flex-col items-center w-full">
+                      <span className="text-[7.5px] sm:text-[8.5px] font-bold text-red-600 flex items-center gap-0.5 leading-none">
+                        <Ban className="w-2 h-2 text-red-600" />
+                        Booked
+                      </span>
+                      <span
+                        className={`mt-0.5 w-full text-[7.5px] sm:text-[8.5px] font-black uppercase tracking-tight py-0.5 px-1 rounded flex items-center justify-center gap-0.5 shadow-2xs border ${
+                          isWaitlisted
+                            ? 'bg-amber-200 text-amber-950 border-amber-400'
+                            : 'bg-amber-500 group-hover:bg-amber-600 text-white border-amber-600'
+                        }`}
+                      >
+                        <BellRing className="w-2 h-2 shrink-0" />
+                        <span className="truncate">{isWaitlisted ? 'Waitlisted' : 'Join Waitlist'}</span>
+                      </span>
+                    </div>
                   ) : isPaused ? (
                     <span className="mt-0.5 sm:mt-1 text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-600 bg-slate-200 px-1 py-0.2 rounded flex items-center gap-0.5">
                       Paused
+                    </span>
+                  ) : isAdvancing ? (
+                    <span className="mt-0.5 sm:mt-1 text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-white bg-[#1e40af] px-1 py-0.2 rounded flex items-center gap-0.5 animate-pulse">
+                      <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
+                      Advancing…
                     </span>
                   ) : isSelected ? (
                     <span className="mt-0.5 sm:mt-1 text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-white bg-[#1e40af] px-1 py-0.2 rounded flex items-center gap-0.5">
@@ -585,7 +678,55 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
               );
             })}
           </div>
+
+          {/* Booked slots waitlist educational banner */}
+          {bookedCount > 0 && (
+            <div className="mt-3 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <BellRing className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-amber-950">
+                    Need a booked slot? Join our WhatsApp Waitlist!
+                  </p>
+                  <p className="text-[11px] text-amber-800 font-medium">
+                    Click <strong>"Join Waitlist"</strong> on any taken slot. Our autonomous system automatically sends an urgent WhatsApp alert the second that slot is cancelled or freed up.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                <span className="text-[10px] font-extrabold text-amber-900 bg-amber-100/90 px-2 py-1 rounded-lg border border-amber-300 flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-600 fill-amber-500" />
+                  {bookedCount} Taken
+                </span>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Join Priority Waitlist Modal */}
+      {waitlistModalSlot && selectedDate && (
+        <JoinWaitlistModal
+          isOpen={Boolean(waitlistModalSlot)}
+          onClose={() => setWaitlistModalSlot(null)}
+          selectedSlot={waitlistModalSlot}
+          selectedDate={selectedDate}
+          selectedDoctor={selectedDoctor}
+          selectedTreatment={selectedTreatment}
+          branch={branch}
+          onSuccess={(entry, whatsappUrl) => {
+            const key = `${selectedDateStr}_${entry.timeSlot}_${selectedDoctor.id}`;
+            setWaitlistedKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+            setWaitlistSuccessToast({
+              slot: entry.timeSlot,
+              phone: entry.patientPhone,
+              whatsappUrl,
+            });
+            setTimeout(() => setWaitlistSuccessToast(null), 10000);
+          }}
+        />
       )}
 
       {/* Button Row */}

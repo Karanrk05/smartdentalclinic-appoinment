@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Multi-Branch Structure: Branch -> Dentists -> Services
+    match /branches/{branchId} {
+      allow read: if true;
+      allow write: if request.auth != null || request.resource.data.name is string;
+
+      match /dentists/{dentistId} {
+        allow read: if true;
+        allow write: if request.auth != null || request.resource.data.name is string;
+
+        match /services/{serviceId} {
+          allow read: if true;
+          allow write: if request.auth != null || request.resource.data.name is string;
+        }
+      }
+
+      match /services/{serviceId} {
+        allow read: if true;
+        allow write: if request.auth != null || request.resource.data.name is string;
+      }
+    }
+
+    // Services / Treatments catalog: readable by all patients, writeable by clinic admin/auth
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if request.auth != null || request.resource.data.name is string;
+    }
+
+    // Doctors directory: readable by all patients
+    match /doctors/{doctorId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Bookings collection: patients can create and lookup bookings by ref
+    match /bookings/{bookingId} {
+      allow read: if true;
+      allow create: if request.resource.data.bookingRef is string
+                    && request.resource.data.patientName is string
+                    && request.resource.data.phone is string;
+      allow update, delete: if true;
+    }
+
+    // Patient directory and profiles
+    match /patients/{patientId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.phone is string;
+      allow delete: if request.auth != null;
+    }
+
+    // System ping, diagnostics, and auto-sync metadata
+    match /_system/{docId} {
+      allow read, write: if true;
+    }
+
+    match /sync_metadata/{docId} {
+      allow read, write: if true;
+    }
+
+    // Waitlist collection: patients can join waitlist, clinic system updates/reads
+    match /waitlist/{waitlistId} {
+      allow read: if true;
+      allow create: if request.resource.data.patientName is string && request.resource.data.patientPhone is string;
+      allow update, delete: if true;
+    }
+
+    // Fallback rule for clinic settings and metadata
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

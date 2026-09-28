@@ -18,6 +18,8 @@ export interface Doctor {
   reviewsCount: number;
   avatarBg: string;
   avatarIcon: string;
+  phone?: string;
+  email?: string;
 }
 
 export type PaymentMode = 'clinic' | 'upi_qr' | 'upi_apps' | 'card' | 'netbanking' | 'wallet';
@@ -59,6 +61,20 @@ export interface ClinicBranch {
   timings: string;
   isMain: boolean;
   isActive: boolean;
+  dentistIds?: string[];
+  dentistsCount?: number;
+  servicesCount?: number;
+}
+
+export interface BranchDentist extends Doctor {
+  branchId: string;
+  serviceIds: string[];
+  services: Treatment[];
+}
+
+export interface BranchHierarchyItem {
+  branch: ClinicBranch;
+  dentists: BranchDentist[];
 }
 
 export const DEFAULT_BRANCHES: ClinicBranch[] = [
@@ -114,6 +130,7 @@ export interface BookingState {
   selectedTime: string | null;
   patient: PatientDetails;
   bookingRef: string | null;
+  instantNotifications?: InstantDispatchResult | null;
 }
 
 export interface DaySchedule {
@@ -201,6 +218,10 @@ export interface PatientRecord {
   appointmentTime: string;
   notes: string;
   status: string;
+  reminder24hSent?: boolean;
+  reminder2hSent?: boolean;
+  reviewSent?: boolean;
+  cancellationNotified?: boolean;
   paymentMode?: string;
   paymentStatus?: string;
   paymentRef?: string;
@@ -223,4 +244,176 @@ export interface PaymentTransaction {
   paymentRef?: string;
 }
 
+export interface WeeklyBackupMetadata {
+  lastBackupTimestamp: string;
+  lastBackupFormatted: string;
+  nextBackupDue: string;
+  totalRecords: number;
+  fileName: string;
+  fileSizeBytes: number;
+  daysUntilNextSync: number;
+  intervalDays: number;
+  trigger: string;
+  isWeeklyRoutineDue: boolean;
+}
 
+export interface InstantNotificationItem {
+  id: string;
+  bookingRef: string;
+  recipientType: 'PATIENT' | 'DOCTOR';
+  recipientName: string;
+  recipientPhone: string;
+  channel: 'WHATSAPP' | 'SMS' | 'PUSH_NOTIFICATION';
+  status: 'DELIVERED' | 'SENT' | 'FAILED';
+  gateway: string;
+  gatewayMessageId: string;
+  timestamp: string;
+  timestampFormatted: string;
+  messageContent: string;
+  deliveredInMs: number;
+  eventType?: 'BOOKING_CONFIRMATION' | 'CANCELLATION' | 'DAILY_DOCTOR_AGENDA' | 'PATIENT_24H_REMINDER' | 'PATIENT_2H_REMINDER' | 'REVIEW_REQUEST' | 'MANUAL_TEST' | 'PUSH_REMINDER' | 'WAITLIST_REGISTRATION' | 'WAITLIST_ALERT';
+  failureReason?: string;
+  retryCount?: number;
+  lastRetriedAt?: string;
+  directUrl?: string;
+}
+
+export interface WaitlistEntry {
+  id: string;
+  createdAt: string;
+  createdAtFormatted: string;
+  date: string;
+  dateFormatted?: string;
+  timeSlot: string;
+  patientName: string;
+  patientPhone: string;
+  patientEmail?: string;
+  doctorName?: string;
+  doctorId?: string;
+  treatmentName?: string;
+  treatmentId?: string;
+  branchName?: string;
+  branchId?: string;
+  notes?: string;
+  status: 'WAITING' | 'NOTIFIED' | 'CLAIMED' | 'CANCELLED';
+  notifiedAt?: string;
+  notifiedAtFormatted?: string;
+  notificationDirectUrl?: string;
+  notificationChannel?: string;
+  notificationMessageId?: string;
+  messagePreview?: string;
+}
+
+export interface InstantDispatchResult {
+  bookingRef: string;
+  totalSent: number;
+  deliveredCount: number;
+  dispatches: {
+    patientWhatsApp: InstantNotificationItem;
+    patientSms: InstantNotificationItem;
+    doctorWhatsApp: InstantNotificationItem;
+    doctorSms: InstantNotificationItem;
+    patientPush?: InstantNotificationItem;
+  };
+  summaryText: string;
+}
+
+export interface MessagingGatewayConfig {
+  autoDispatchEnabled: boolean;
+  zeroTouchAutoSendEnabled?: boolean;
+  patientWhatsAppEnabled: boolean;
+  doctorWhatsAppEnabled: boolean;
+  cancellationWhatsAppEnabled: boolean;
+  dailyDoctorAgendaEnabled: boolean;
+  dailyDoctorAgendaTime: string;
+  patientReminder24hEnabled: boolean;
+  patientReminder2hEnabled: boolean;
+  browserPushFallbackEnabled?: boolean;
+  browserPushRemindersEnabled?: boolean;
+  reviewRequestEnabled: boolean;
+  googleReviewLink: string;
+  clinicWhatsAppNumber: string;
+  clinicHelplineNumber: string;
+  defaultDoctorPhone: string;
+  patientSmsEnabled: boolean;
+  doctorSmsEnabled: boolean;
+  smsGatewayProvider: 'Fast2SMS' | 'Twilio' | 'MSG91';
+  whatsappGatewayProvider: 'Meta Cloud API' | 'Twilio' | 'Gupshup' | 'Custom Webhook / WATI';
+  metaPhoneNumberId?: string;
+  metaAccessToken?: string;
+  metaTemplateName?: string;
+  whatsappWebhookUrl?: string;
+  customWebhookUrl?: string;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioWhatsAppFrom?: string;
+  callMeBotApiKey?: string;
+  n8nEnabled?: boolean;
+  n8nWebhookUrl?: string;
+  n8nMorningAgendaWebhookUrl?: string;
+  lastDailyDoctorAgendaRunDate?: string;
+  lastDailyDoctorAgendaRunTimestamp?: string;
+  lastDailyDoctorAgendaRunCount?: number;
+  monthlyExcelAutoExportEnabled?: boolean;
+  monthlyExcelAutoSendToDoctorEnabled?: boolean;
+  monthlyExcelDayOfMonth?: number;
+  monthlyExcelTime?: string;
+  lastMonthlyExcelRunMonth?: string;
+  lastMonthlyExcelRunTimestamp?: string;
+  lastMonthlyExcelRunCount?: number;
+}
+
+export interface DoctorDailyAgendaItem {
+  doctor: Doctor;
+  appointmentCount: number;
+  appointments: PatientRecord[];
+  formattedWhatsApp?: string;
+  formattedSms?: string;
+  whatsappDirectUrl?: string;
+  phone?: string;
+}
+
+export interface DoctorAgendaResponse {
+  success: boolean;
+  date: string;
+  totalDoctors: number;
+  totalTodayAppointments: number;
+  autoEnabled: boolean;
+  scheduleTime: string;
+  lastDispatchedDate: string;
+  lastDispatchedTimestamp: string;
+  isDispatchedToday: boolean;
+  agenda: DoctorDailyAgendaItem[];
+}
+
+export interface DoctorMonthlyReportItem {
+  doctor: Doctor;
+  month: string;
+  monthName: string;
+  totalAppointments: number;
+  completedAppointments: number;
+  estimatedRevenue: number;
+  appointments: PatientRecord[];
+  downloadUrl: string;
+  formattedWhatsApp: string;
+  formattedSms: string;
+  whatsappDirectUrl: string;
+  phone: string;
+}
+
+export interface MonthlyReportStatusResponse {
+  success: boolean;
+  currentMonth: string;
+  currentMonthName: string;
+  totalDoctors: number;
+  totalMonthAppointments: number;
+  totalMonthRevenue: number;
+  autoExportEnabled: boolean;
+  autoSendToDoctorEnabled: boolean;
+  dayOfMonth: number;
+  scheduleTime: string;
+  lastRunMonth?: string;
+  lastRunTimestamp?: string;
+  isRunThisMonth: boolean;
+  doctorReports: DoctorMonthlyReportItem[];
+}

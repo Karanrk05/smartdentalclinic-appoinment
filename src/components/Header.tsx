@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenExcelModal?: () => void;
   onOpenAdminModal?: () => void;
   onOpenPatientHistoryModal?: () => void;
+  onOpenDoctorMorningModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExcelModal,
   onOpenAdminModal,
   onOpenPatientHistoryModal,
+  onOpenDoctorMorningModal,
 }) => {
   const [dbCount, setDbCount] = useState<number>(0);
   const [serverOnline, setServerOnline] = useState<boolean>(true);

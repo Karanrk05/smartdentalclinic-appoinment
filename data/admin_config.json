@@ -1,8 +1,36 @@
 {
   "pin": "1234",
-  "lastUpdated": "2026-09-03T07:59:07.405Z",
-  "lastUpdatedBy": "Clinic Admin",
+  "lastUpdated": "2026-09-17T07:53:28.022Z",
+  "lastUpdatedBy": "Admin Corner",
   "changeLog": [
+    {
+      "id": "CHG_1789631608023",
+      "action": "AUTOMATED_WEEKLY_BACKUP",
+      "target": "Secondary JSON Storage (patients_weekly_backup.json)",
+      "timestamp": "2026-09-17 07:53:28",
+      "details": "Weekly backup routine synced: saved 0 patient record(s) to secondary JSON storage (Manual Admin Sync Request)"
+    },
+    {
+      "id": "CHG_1789631596407",
+      "action": "AUTOMATED_WEEKLY_BACKUP",
+      "target": "Secondary JSON Storage (patients_weekly_backup.json)",
+      "timestamp": "2026-09-17 07:53:16",
+      "details": "Weekly backup routine synced: saved 0 patient record(s) to secondary JSON storage (ExcelDatabaseModal Open (Admin Routine))"
+    },
+    {
+      "id": "CHG_1789630941851",
+      "action": "UPDATE_TREATMENTS",
+      "target": "Treatments Catalog & Pricing",
+      "timestamp": "2026-09-17 07:42:21",
+      "details": "Updated 10 treatments and fees"
+    },
+    {
+      "id": "CHG_1789630919755",
+      "action": "DELETE_BRANCH",
+      "target": "Smart Dental Clinic – Westside Smiles Hub",
+      "timestamp": "2026-09-17 07:41:59",
+      "details": "Removed branch: Smart Dental Clinic – Westside Smiles Hub"
+    },
     {
       "id": "CHG_1788422347405",
       "action": "UPDATE_CLINIC_PROFILE",

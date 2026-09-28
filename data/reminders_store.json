@@ -1,1 +1,80 @@
-{}
+{
+  "SCXOCCJ": {
+    "bookingRef": "SCXOCCJ",
+    "patientName": "Karan Kshirsagar",
+    "phone": "9527050086",
+    "email": "karanrk2005@gmail.com",
+    "appointmentDate": "2026-09-19",
+    "appointmentTime": "10:00 AM",
+    "treatmentName": "Tooth Sensitivity Relief",
+    "doctorName": "Dr. Vikram Shah",
+    "doctorSpecialization": "General Dental Surgeon",
+    "smsEnabled": true,
+    "emailEnabled": true,
+    "scheduledDispatchTime": "2026-09-18T10:00:00.000Z",
+    "scheduledDispatchFormatted": "Fri, Sep 18, 10:00 AM",
+    "earlyArrivalMinutes": 10,
+    "earlyArrivalTime": "09:50 AM",
+    "status": "SCHEDULED",
+    "createdDate": "2026-09-18T09:55:49.705Z",
+    "logs": [
+      {
+        "id": "LOG_1789725349705_1",
+        "type": "SMS",
+        "recipient": "9527050086",
+        "timestamp": "2026-09-18 09:55:49",
+        "status": "QUEUED",
+        "gatewayId": "SMS_GW_546349",
+        "message": "24-Hour SMS reminder scheduled for dispatch on Fri, Sep 18, 10:00 AM"
+      },
+      {
+        "id": "LOG_1789725349705_2",
+        "type": "EMAIL",
+        "recipient": "karanrk2005@gmail.com",
+        "timestamp": "2026-09-18 09:55:49",
+        "status": "QUEUED",
+        "gatewayId": "SMTP_JOB_877138",
+        "message": "24-Hour Email reminder + clinical check-in slip scheduled for dispatch on Fri, Sep 18, 10:00 AM"
+      }
+    ]
+  },
+  "SCWN2MG": {
+    "bookingRef": "SCWN2MG",
+    "patientName": "Karan Kshirsagar",
+    "phone": "9527050086",
+    "email": "karanrk2005@gmail.com",
+    "appointmentDate": "2026-09-18",
+    "appointmentTime": "10:30 AM",
+    "treatmentName": "Composite Tooth-Colored Filling",
+    "doctorName": "Dr. Vikram Shah",
+    "doctorSpecialization": "General Dental Surgeon",
+    "smsEnabled": true,
+    "emailEnabled": true,
+    "scheduledDispatchTime": "2026-09-17T10:30:00.000Z",
+    "scheduledDispatchFormatted": "Thu, Sep 17, 10:30 AM",
+    "earlyArrivalMinutes": 10,
+    "earlyArrivalTime": "10:20 AM",
+    "status": "SCHEDULED",
+    "createdDate": "2026-09-18T10:24:06.084Z",
+    "logs": [
+      {
+        "id": "LOG_1789727046084_1",
+        "type": "SMS",
+        "recipient": "9527050086",
+        "timestamp": "2026-09-18 10:24:06",
+        "status": "QUEUED",
+        "gatewayId": "SMS_GW_201155",
+        "message": "24-Hour SMS reminder scheduled for dispatch on Thu, Sep 17, 10:30 AM"
+      },
+      {
+        "id": "LOG_1789727046084_2",
+        "type": "EMAIL",
+        "recipient": "karanrk2005@gmail.com",
+        "timestamp": "2026-09-18 10:24:06",
+        "status": "QUEUED",
+        "gatewayId": "SMTP_JOB_501531",
+        "message": "24-Hour Email reminder + clinical check-in slip scheduled for dispatch on Thu, Sep 17, 10:30 AM"
+      }
+    ]
+  }
+}

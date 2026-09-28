@@ -32,6 +32,10 @@ interface PaymentAppsGridProps {
   amount?: number | string;
   totalFee?: number;
   patientName?: string;
+  patientPhone?: string;
+  patientEmail?: string;
+  bookingRef?: string;
+  treatmentName?: string;
   bookingNote?: string;
   clinicUpiId?: string;
   clinicName?: string;
@@ -60,6 +64,10 @@ export const PaymentAppsGrid: React.FC<PaymentAppsGridProps> = ({
   amount = 200,
   totalFee = 500,
   patientName = 'Patient',
+  patientPhone = '',
+  patientEmail = '',
+  bookingRef = '',
+  treatmentName = '',
   bookingNote = 'Dental Appointment Booking Token',
   clinicUpiId = 'smartdental@okhdfcbank',
   clinicName = 'Smart Dental Clinic',

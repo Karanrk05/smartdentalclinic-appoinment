@@ -47,6 +47,22 @@ export function saveLocalCachedPatientRecords(records: PatientRecord[]): void {
   }
 }
 
+export function clearLocalCachedPatientRecords(): void {
+  try {
+    localStorage.removeItem(OFFLINE_PATIENT_RECORDS_KEY);
+  } catch (e) {
+    console.warn('Failed clearing cached patient records from localStorage', e);
+  }
+}
+
+export function clearPendingOfflineQueue(): void {
+  try {
+    localStorage.removeItem(OFFLINE_PENDING_QUEUE_KEY);
+  } catch (e) {
+    console.warn('Failed clearing pending offline bookings queue', e);
+  }
+}
+
 export function appendLocalPatientRecord(record: PatientRecord): void {
   try {
     const existing = getLocalCachedPatientRecords();

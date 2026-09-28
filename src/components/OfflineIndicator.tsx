@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { WifiOff, RefreshCw, CloudUpload, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
 import { getPendingOfflineQueue, syncPendingOfflineBookings } from '../utils/offlineEngine';
 
 export function useOnlineStatus() {
@@ -23,99 +22,60 @@ export function useOnlineStatus() {
   return isOnline;
 }
 
+/**
+ * Silent Automatic Background Sync Engine.
+ * Automatically synchronizes pending offline bookings and queues in the background
+ * without displaying intrusive popups, banners, or toasts on the user's screen.
+ */
 export const OfflineIndicator: React.FC = () => {
   const isOnline = useOnlineStatus();
-  const [pendingCount, setPendingCount] = useState<number>(0);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncSuccessMsg, setSyncSuccessMsg] = useState('');
+  const isSyncingRef = useRef(false);
 
-  // Check pending queue length
-  useEffect(() => {
-    const updateCount = () => {
-      const q = getPendingOfflineQueue();
-      setPendingCount(q.length);
-    };
-    updateCount();
-    const interval = setInterval(updateCount, 4000);
-    return () => clearInterval(interval);
-  }, []);
+  // Background auto-sync function
+  const autoSyncQueueSilently = async () => {
+    if (isSyncingRef.current || !navigator.onLine) return;
+    const queue = getPendingOfflineQueue();
+    if (queue.length === 0) return;
 
-  // When coming back online, auto-sync pending offline bookings
-  useEffect(() => {
-    if (isOnline && pendingCount > 0 && !isSyncing) {
-      handleSync();
-    }
-  }, [isOnline, pendingCount]);
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    setSyncSuccessMsg('');
     try {
+      isSyncingRef.current = true;
       const res = await syncPendingOfflineBookings();
       if (res.successCount > 0) {
-        setSyncSuccessMsg(`Synced ${res.successCount} offline booking(s) to server!`);
-        setTimeout(() => setSyncSuccessMsg(''), 4000);
+        // Trigger Firestore auto-sync event in background
+        window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
       }
-      const q = getPendingOfflineQueue();
-      setPendingCount(q.length);
-    } catch (e) {
-      console.error('Failed syncing offline queue', e);
+    } catch (err) {
+      console.warn('Background auto-sync queue check:', err);
     } finally {
-      setIsSyncing(false);
+      isSyncingRef.current = false;
     }
   };
 
-  // If online and no pending offline queue and no success message, keep unobtrusive
-  if (isOnline && pendingCount === 0 && !syncSuccessMsg) {
-    return null;
-  }
+  // 1. Check & automatically sync on mount and periodically in the background
+  useEffect(() => {
+    autoSyncQueueSilently();
+    const interval = setInterval(autoSyncQueueSilently, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
-  // If sync succeeded message
-  if (isOnline && syncSuccessMsg) {
-    return (
-      <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-50 flex items-center justify-between gap-3 rounded-xl bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-white shadow-xl animate-fade-in">
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0 text-emerald-200" />
-          <span>{syncSuccessMsg}</span>
-        </div>
-      </div>
-    );
-  }
+  // 2. Automatically sync when coming back online
+  useEffect(() => {
+    if (isOnline) {
+      autoSyncQueueSilently();
+    }
+  }, [isOnline]);
 
-  return (
-    <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-50 flex items-center justify-between gap-3 rounded-xl bg-amber-600 px-3.5 py-2.5 text-xs font-semibold text-white shadow-xl animate-fade-in">
-      <div className="flex items-center gap-2 min-w-0">
-        <WifiOff className="w-4 h-4 shrink-0" />
-        <span className="truncate">
-          {!isOnline
-            ? pendingCount > 0
-              ? `Offline · ${pendingCount} booking(s) queued locally`
-              : 'Offline Mode · Using cached clinic schedules & data'
-            : `${pendingCount} offline booking(s) ready to sync`}
-        </span>
-      </div>
+  // 3. Listen for local queue change events to sync automatically
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sdc_offline_booking_queue') {
+        autoSyncQueueSilently();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
-      <div className="flex items-center gap-1.5 shrink-0">
-        {pendingCount > 0 && isOnline && (
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white text-amber-800 hover:bg-amber-50 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
-          >
-            <CloudUpload className="w-3.5 h-3.5" />
-            <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          title="Reload application"
-          className="p-1 bg-white/20 hover:bg-white/30 rounded-lg text-[11px] font-bold transition-colors"
-        >
-          <RefreshCw className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  );
+  // Return null: Zero intrusive popups or banners on screen; syncing operates completely silently in the background
+  return null;
 };

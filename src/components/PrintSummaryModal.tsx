@@ -3,7 +3,7 @@ import { X, Printer, Download, MessageSquare, ExternalLink, FileText, Check, Shi
 import { BookingState, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
 import { cleanPhoneNumber, generateWhatsAppReceiptText } from './WhatsAppShareModal';
 import { PrintableAppointmentSlip } from './PrintableAppointmentSlip';
-import { printSlipDirect, openSlipInNewTab, downloadSlipHTML, SlipPrintFormat } from '../utils/printSlip';
+import { printSlipDirect, openSlipInNewTab, downloadSlipHTML, downloadSlipPDF, SlipPrintFormat } from '../utils/printSlip';
 
 interface PrintSummaryModalProps {
   isOpen: boolean;
@@ -31,15 +31,42 @@ export const PrintSummaryModal: React.FC<PrintSummaryModalProps> = ({
 
   const handlePrint = async (formatToUse: SlipPrintFormat = printFormat) => {
     setIsPrinting(true);
-    setPrintFeedback(`Preparing ${formatToUse === 'thermal' ? '80mm Thermal' : 'A4 Official'} slip...`);
+    setPrintFeedback(`Downloading & preparing ${formatToUse === 'thermal' ? '80mm Thermal' : 'A4 Official'} slip...`);
 
     try {
-      await printSlipDirect(booking, clinicProfile, formatToUse);
-      setPrintFeedback('Print dialog sent successfully!');
+      // 1. Download official PDF slip directly to device
+      await downloadSlipPDF(booking, clinicProfile, formatToUse);
+      setPrintFeedback('Slip downloaded as PDF! Launching printer…');
+
+      // 2. Also invoke native printer dialog if available
+      await printSlipDirect(booking, clinicProfile, formatToUse, false);
     } catch (err) {
-      console.error('Print error:', err);
-      // Fallback
-      window.print();
+      console.error('Print/download error:', err);
+      try {
+        downloadSlipHTML(booking, clinicProfile, formatToUse);
+        setPrintFeedback('Slip downloaded as HTML');
+      } catch (fallbackErr) {
+        console.error(fallbackErr);
+        window.print();
+      }
+    } finally {
+      setTimeout(() => {
+        setIsPrinting(false);
+        setPrintFeedback(null);
+      }, 3500);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    setIsPrinting(true);
+    setPrintFeedback(`Downloading official ${printFormat === 'thermal' ? '80mm Thermal' : 'A4'} PDF slip...`);
+    try {
+      await downloadSlipPDF(booking, clinicProfile, printFormat);
+      setPrintFeedback('Slip downloaded successfully (PDF)!');
+    } catch (err) {
+      console.error(err);
+      downloadSlipHTML(booking, clinicProfile, printFormat);
+      setPrintFeedback('Slip downloaded as HTML');
     } finally {
       setTimeout(() => {
         setIsPrinting(false);
@@ -181,10 +208,11 @@ IMPORTANT INSTRUCTIONS:
               type="button"
               onClick={() => handlePrint()}
               disabled={isPrinting}
+              title="Download official slip (PDF) & open printer"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white text-[#2563eb] hover:bg-[#eff6ff] font-extrabold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>{isPrinting ? 'Printing…' : 'Print Slip'}</span>
+              <span>{isPrinting ? 'Downloading…' : 'Print Slip'}</span>
             </button>
 
             {/* Close Button */}
@@ -231,6 +259,16 @@ IMPORTANT INSTRUCTIONS:
 
           {/* Quick auxiliary export buttons */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 font-bold transition-colors cursor-pointer"
+              title="Download official PDF appointment slip directly"
+            >
+              <Download className="w-3 h-3 text-blue-600" />
+              <span>Download PDF</span>
+            </button>
+
             <button
               type="button"
               onClick={handleOpenCleanTab}
@@ -300,7 +338,7 @@ IMPORTANT INSTRUCTIONS:
               className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#2563eb] text-white hover:bg-[#1d4ed8] font-extrabold text-xs shadow-md shadow-[#2563eb]/20 transition-all cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
-              <span>{isPrinting ? 'Printing…' : `Print ${printFormat === 'thermal' ? '80mm Slip' : 'Confirmation Slip'}`}</span>
+              <span>{isPrinting ? 'Downloading & Printing…' : `Print / Download ${printFormat === 'thermal' ? '80mm Slip' : 'Confirmation Slip'}`}</span>
             </button>
             <button
               type="button"

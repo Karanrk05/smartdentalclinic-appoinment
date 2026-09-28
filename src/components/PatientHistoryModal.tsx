@@ -24,12 +24,19 @@ import {
   CreditCard,
   ChevronDown,
   Receipt,
+  MessageSquare,
 } from 'lucide-react';
 import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE, PaymentTransaction } from '../types';
 import { SmartDentalLogo } from './SmartDentalLogo';
 import { PrintSummaryModal } from './PrintSummaryModal';
 import { getLocalCachedPatientRecords } from '../utils/offlineEngine';
 import { PaymentHistoryList } from './PaymentHistoryList';
+import { rescheduleBookingInFirestore, cancelBookingInFirestore } from '../firebase';
+import { 
+  buildWhatsAppLink, 
+  generateWhatsAppReschedulePatientText, 
+  generateWhatsAppCancelPatientText 
+} from './WhatsAppShareModal';
 
 interface PatientHistoryModalProps {
   isOpen: boolean;
@@ -75,6 +82,12 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
   const [cancelReason, setCancelReason] = useState<string>('Change of plans / Schedule conflict');
   const [isSubmittingCancel, setIsSubmittingCancel] = useState<boolean>(false);
   const [cancelSuccessMsg, setCancelSuccessMsg] = useState<string>('');
+  const [whatsappAction, setWhatsappAction] = useState<{
+    type: 'RESCHEDULE' | 'CANCEL';
+    url: string;
+    label: string;
+    message: string;
+  } | null>(null);
 
   // Rescheduling state
   const [reschedulingRecord, setReschedulingRecord] = useState<PatientRecord | null>(null);
@@ -221,6 +234,12 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
       const data = await res.json();
 
       if (res.ok && data.success) {
+        // Also sync to Firestore
+        cancelBookingInFirestore(cancellingRef, cancelReason).catch((fsErr) => {
+          console.warn('Could not sync cancellation to Firestore:', fsErr);
+        });
+        window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
+
         // Update local list
         setRecords((prev) =>
           prev.map((r) =>
@@ -235,7 +254,28 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
           upcomingCount: Math.max(0, prev.upcomingCount - 1),
           cancelledCount: prev.cancelledCount + 1,
         }));
-        setCancelSuccessMsg(`Appointment ${cancellingRef} has been cancelled successfully.`);
+        
+        const rec = records.find((r) => r.bookingRef.toUpperCase() === cancellingRef.toUpperCase());
+        const canText = generateWhatsAppCancelPatientText({
+          bookingRef: cancellingRef,
+          patientName: rec?.patientName || 'Patient',
+          doctorName: rec?.doctorName || 'Dentist',
+          treatmentName: rec?.treatmentName || 'Dental Procedure',
+          cancelledDate: rec?.appointmentDate || todayStr,
+          cancelledTime: rec?.appointmentTime || '',
+          clinicName: clinicProfile.name,
+          clinicPhone: clinicProfile.phone,
+          reason: cancelReason,
+        });
+        const canUrl = data.patientWhatsAppUrl || buildWhatsAppLink(rec?.phone || '', canText);
+        setWhatsappAction({
+          type: 'CANCEL',
+          url: canUrl,
+          label: `Cancellation Notice for ${cancellingRef}`,
+          message: data.patientWhatsAppMessage || canText,
+        });
+
+        setCancelSuccessMsg(`Appointment ${cancellingRef} has been cancelled successfully. WhatsApp notification ready.`);
         setCancellingRef(null);
       } else {
         alert(data.error || 'Failed to cancel appointment');
@@ -271,6 +311,17 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
       const data = await res.json();
 
       if (res.ok && data.success) {
+        // Also sync to Firestore
+        rescheduleBookingInFirestore(
+          reschedulingRecord.bookingRef,
+          rescheduleDate,
+          rescheduleTime,
+          rescheduleReason
+        ).catch((fsErr) => {
+          console.warn('Could not sync reschedule to Firestore:', fsErr);
+        });
+        window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
+
         setRecords((prev) =>
           prev.map((r) =>
             r.bookingRef.toUpperCase() === reschedulingRecord.bookingRef.toUpperCase()
@@ -283,8 +334,29 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
               : r
           )
         );
+
+        const resText = generateWhatsAppReschedulePatientText({
+          bookingRef: reschedulingRecord.bookingRef,
+          patientName: reschedulingRecord.patientName || 'Patient',
+          doctorName: reschedulingRecord.doctorName || 'Dentist',
+          treatmentName: reschedulingRecord.treatmentName || 'Dental Procedure',
+          newDate: rescheduleDate,
+          newTime: rescheduleTime,
+          clinicName: clinicProfile.name,
+          clinicPhone: clinicProfile.phone,
+          clinicAddress: reschedulingRecord.branchAddress || clinicProfile.address,
+          reason: rescheduleReason,
+        });
+        const resUrl = data.patientWhatsAppUrl || buildWhatsAppLink(reschedulingRecord.phone || '', resText);
+        setWhatsappAction({
+          type: 'RESCHEDULE',
+          url: resUrl,
+          label: `Rescheduled to ${rescheduleDate} at ${rescheduleTime}`,
+          message: data.patientWhatsAppMessage || resText,
+        });
+
         setCancelSuccessMsg(
-          `Appointment ${reschedulingRecord.bookingRef} rescheduled to ${rescheduleDate} at ${rescheduleTime}.`
+          `Appointment ${reschedulingRecord.bookingRef} rescheduled to ${rescheduleDate} at ${rescheduleTime}. WhatsApp alert ready.`
         );
         setReschedulingRecord(null);
       } else {
@@ -439,6 +511,46 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
             <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold animate-fade-in">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
               <span>{cancelSuccessMsg}</span>
+            </div>
+          )}
+
+          {whatsappAction && (
+            <div className="p-3.5 bg-emerald-50 border-2 border-[#25D366] rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <MessageSquare className="w-4 h-4 fill-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-black text-xs text-emerald-950">WhatsApp Notice Ready</span>
+                    <span className="text-[10px] font-black bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full uppercase">
+                      {whatsappAction.type === 'RESCHEDULE' ? 'Rescheduled' : 'Cancelled'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-800 leading-snug">{whatsappAction.label}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <a
+                  href={whatsappAction.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 sm:flex-none py-2 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-white font-extrabold text-xs shadow-md shadow-[#25D366]/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 fill-white" />
+                  <span>Send on WhatsApp</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(whatsappAction.message);
+                    alert('WhatsApp message copied to clipboard!');
+                  }}
+                  className="py-2 px-3 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Copy Text
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -777,15 +889,16 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
                         <span>24h SMS/Email reminder scheduled</span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {/* Reschedule Button (if upcoming or cancelled) */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Reschedule Button: available for all appointments */}
                         {isUpcoming && (
                           <button
                             type="button"
                             onClick={() => handleStartReschedule(rec)}
-                            className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                            className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            title="Reschedule this appointment to a new date and time"
                           >
-                            <RefreshCw className="w-3 h-3" />
+                            <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
                             <span>Reschedule</span>
                           </button>
                         )}
@@ -795,9 +908,37 @@ export const PatientHistoryModal: React.FC<PatientHistoryModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setCancellingRef(rec.bookingRef)}
-                            className="px-3 py-1.5 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition-colors cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            title="Cancel this appointment"
                           >
-                            Cancel
+                            <Ban className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Cancel</span>
+                          </button>
+                        )}
+
+                        {/* If cancelled: allow rescheduling and reactivating */}
+                        {isCancelled && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartReschedule(rec)}
+                            className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            title="Reschedule and reactivate this cancelled appointment"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Reschedule & Reactivate</span>
+                          </button>
+                        )}
+
+                        {/* If past visit: allow rescheduling new date */}
+                        {!isUpcoming && !isCancelled && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartReschedule(rec)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            title="Reschedule follow-up visit"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Book Follow-up</span>
                           </button>
                         )}
 

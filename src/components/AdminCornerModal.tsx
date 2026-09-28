@@ -44,7 +44,22 @@ import {
   CreditCard,
   QrCode,
   BarChart3,
+  Zap,
+  Cloud,
+  Database,
 } from 'lucide-react';
+import { AdminNotificationsTab } from './AdminNotificationsTab';
+import { 
+  syncServicesToFirestore, 
+  testFirestoreConnection, 
+  firebaseConfig,
+  autoSyncAllRecordsToFirestore,
+  syncBranchHierarchyToFirestore,
+  isAutoSyncEnabled,
+  setAutoSyncEnabled,
+  getLastFirebaseSyncTime,
+  getLastFirebaseSyncCount,
+} from '../firebase';
 import {
   Treatment,
   Doctor,
@@ -109,7 +124,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   // Active Tab: Defaults to 'dashboard' for instant visual analytics
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'branches' | 'treatments' | 'doctors' | 'timings' | 'settings' | 'ai_insights'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'branches' | 'treatments' | 'doctors' | 'timings' | 'notifications' | 'settings' | 'ai_insights'>('dashboard');
 
   // Clinic Branches Management State
   const [branches, setBranches] = useState<ClinicBranch[]>(DEFAULT_BRANCHES);
@@ -188,6 +203,88 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [firebaseStatus, setFirebaseStatus] = useState<string | null>(null);
+  const [isSyncingFirebaseServices, setIsSyncingFirebaseServices] = useState<boolean>(false);
+  const [isSyncingFirebaseBookings, setIsSyncingFirebaseBookings] = useState<boolean>(false);
+  const [isSyncingHierarchy, setIsSyncingHierarchy] = useState<boolean>(false);
+  const [adminAutoSyncOn, setAdminAutoSyncOn] = useState<boolean>(() => isAutoSyncEnabled());
+  const [adminLastSyncTime, setAdminLastSyncTime] = useState<string | null>(() => getLastFirebaseSyncTime());
+  const [adminLastSyncCount, setAdminLastSyncCount] = useState<number>(() => getLastFirebaseSyncCount());
+
+  // Listen for background auto-sync completion events
+  useEffect(() => {
+    const handleSyncDone = (e: any) => {
+      if (e && e.detail) {
+        setAdminLastSyncTime(e.detail.timestamp);
+        setAdminLastSyncCount(e.detail.count);
+      }
+    };
+    window.addEventListener('sdc_auto_sync_completed', handleSyncDone);
+    return () => window.removeEventListener('sdc_auto_sync_completed', handleSyncDone);
+  }, []);
+
+  const handleToggleAdminAutoSync = (enabled: boolean) => {
+    setAdminAutoSyncOn(enabled);
+    setAutoSyncEnabled(enabled);
+    if (enabled) {
+      setFirebaseStatus('Firebase Auto-Sync is now ACTIVE. Background sync will run every 45s.');
+      handleSyncBookingsToFirebase();
+    } else {
+      setFirebaseStatus('Firebase Auto-Sync is PAUSED.');
+    }
+  };
+
+  const handleSyncServicesToFirebase = async () => {
+    if (!treatments.length) return;
+    setIsSyncingFirebaseServices(true);
+    try {
+      const count = await syncServicesToFirestore(treatments);
+      setFirebaseStatus(`Synced ${count} dental treatments into Firebase Firestore ("services" collection) successfully!`);
+    } catch (e: any) {
+      setFirebaseStatus(`Sync notice: ${e.message || e}`);
+    } finally {
+      setIsSyncingFirebaseServices(false);
+    }
+  };
+
+  const handleSyncBookingsToFirebase = async () => {
+    setIsSyncingFirebaseBookings(true);
+    try {
+      const res = await fetch('/api/patients');
+      if (!res.ok) throw new Error('Could not fetch bookings from server');
+      const data = await res.json();
+      if (data && Array.isArray(data.data)) {
+        const syncRes = await autoSyncAllRecordsToFirestore(data.data, 'AdminCornerSync');
+        if (syncRes.success) {
+          setFirebaseStatus(`Successfully synchronized ${syncRes.syncedCount} patient appointments to Firebase Firestore!`);
+          setAdminLastSyncTime(new Date().toISOString());
+          setAdminLastSyncCount(syncRes.syncedCount);
+        } else {
+          setFirebaseStatus(`Sync warning: ${syncRes.error}`);
+        }
+      }
+    } catch (err: any) {
+      setFirebaseStatus(`Sync error: ${err.message || err}`);
+    } finally {
+      setIsSyncingFirebaseBookings(false);
+    }
+  };
+
+  const handleSyncHierarchyToFirebase = async () => {
+    setIsSyncingHierarchy(true);
+    try {
+      const res = await syncBranchHierarchyToFirestore();
+      if (res.success) {
+        setFirebaseStatus(`Synced multi-branch hierarchy (${res.branchesSynced} branches, ${res.dentistsSynced} dentists, ${res.servicesSynced} services) to Firestore!`);
+      } else {
+        setFirebaseStatus('Hierarchy sync completed with warnings.');
+      }
+    } catch (err: any) {
+      setFirebaseStatus(`Hierarchy sync error: ${err.message || err}`);
+    } finally {
+      setIsSyncingHierarchy(false);
+    }
+  };
 
   // Delete & Reset in-modal Confirmation Target
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -1019,28 +1116,27 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white border-2 border-slate-700/20 shadow-2xl rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="bg-white border border-slate-200/90 shadow-2xl rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="bg-slate-900 text-white px-3.5 sm:px-7 py-3 sm:py-4.5 flex items-center justify-between gap-2 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-              <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="bg-slate-900 text-white px-5 sm:px-7 py-3.5 sm:py-4 flex items-center justify-between gap-3 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-blue-400 shrink-0">
+              <Shield className="w-4 h-4 text-blue-400" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <h3 className="font-black text-sm sm:text-lg text-white tracking-tight truncate">Admin Corner</h3>
-                <span className="bg-blue-500/20 text-blue-300 text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 sm:px-2 py-0.2 rounded-full border border-blue-400/30">
-                  Management
-                </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-semibold text-base sm:text-lg text-white tracking-tight truncate">
+                  Admin Console
+                </h3>
                 {isAuthenticated && (
-                  <span className="bg-emerald-500/20 text-emerald-300 text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.2 rounded-full border border-emerald-400/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                     Authorized
                   </span>
                 )}
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-400 font-medium mt-0.5 hidden sm:block">
-                Manage Treatment Pricing & Doctor Directory · Persisted permanently on server
+              <p className="text-xs text-slate-400 font-normal mt-0.5 hidden sm:block truncate">
+                Clinic operations, service pricing, doctors directory, and schedule management
               </p>
             </div>
           </div>
@@ -1048,25 +1144,24 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
-            title="Close Admin Corner"
+            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            title="Close Admin Panel"
           >
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* PIN Authentication Gate */}
         {!isAuthenticated ? (
-          <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center space-y-6 flex-1 overflow-y-auto bg-slate-50/50">
-            <div className="w-16 h-16 rounded-2xl bg-blue-100 border-2 border-blue-200 flex items-center justify-center text-blue-600 shadow-inner">
-              <Lock className="w-8 h-8" />
+          <div className="p-8 sm:p-14 flex flex-col items-center justify-center text-center space-y-6 flex-1 overflow-y-auto bg-slate-50/50">
+            <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shadow-xs">
+              <Lock className="w-5 h-5 text-slate-700" />
             </div>
 
-            <div className="max-w-md space-y-2">
-              <h4 className="text-xl font-black text-slate-800">Admin Security Verification</h4>
-              <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                Enter your 4-digit Clinic Admin PIN to modify prices, update doctor names, or add
-                services. Once saved, changes stay effective until updated again.
+            <div className="max-w-sm space-y-1.5">
+              <h4 className="text-lg font-semibold text-slate-900">Admin Authentication</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Enter your 4-digit PIN to access clinic configurations and settings.
               </p>
             </div>
 
@@ -1083,13 +1178,13 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                     setPinError('');
                   }}
                   placeholder="Enter PIN (Default: 1234)"
-                  className="w-full bg-white border-2 border-slate-300 rounded-xl pl-10 pr-4 py-3 text-center text-base tracking-widest font-black text-slate-800 placeholder:tracking-normal placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 transition-all shadow-xs"
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-center text-sm font-semibold tracking-wider text-slate-900 placeholder:tracking-normal placeholder:text-xs placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
                   autoFocus
                 />
               </div>
 
               {pinError && (
-                <div className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2 flex items-center gap-1.5 text-left">
+                <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2.5 flex items-center gap-1.5 text-left font-medium">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>{pinError}</span>
                 </div>
@@ -1099,23 +1194,23 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                 id="btn-verify-pin"
                 type="submit"
                 disabled={isVerifying}
-                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <Unlock className="w-4 h-4" />
-                <span>{isVerifying ? 'Verifying...' : 'Unlock Admin Portal'}</span>
+                <span>{isVerifying ? 'Verifying...' : 'Unlock Admin Console'}</span>
               </button>
 
-              <p className="text-[11px] text-slate-400 text-center font-medium">
-                Default Master PIN: <span className="font-bold text-slate-600">1234</span> (configurable inside Settings)
+              <p className="text-[11px] text-slate-400 text-center font-normal">
+                Default Master PIN: <span className="font-semibold text-slate-600">1234</span>
               </p>
             </form>
           </div>
         ) : (
           /* Authenticated Admin Workspace */
-          <div className="flex flex-col flex-1 min-h-0 bg-slate-50">
+          <div className="flex flex-col flex-1 min-h-0 bg-slate-50/50">
             {/* Global Notification Banner */}
             {saveSuccessMsg && (
-              <div className="bg-emerald-500 text-white px-4 py-2.5 text-xs sm:text-sm font-bold flex items-center justify-between shadow-xs animate-in slide-in-from-top-2">
+              <div className="bg-emerald-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-xs animate-in slide-in-from-top-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>{saveSuccessMsg}</span>
@@ -1131,7 +1226,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
             )}
 
             {errorMessage && (
-              <div className="bg-rose-500 text-white px-4 py-2.5 text-xs sm:text-sm font-bold flex items-center justify-between shadow-xs">
+              <div className="bg-rose-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-xs">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{errorMessage}</span>
@@ -1147,148 +1242,52 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
             )}
 
             {/* Admin Tabs */}
-            <div className="bg-white border-b border-slate-200 px-3 sm:px-7 pt-2 sm:pt-3 flex items-center justify-between gap-2 sm:gap-4 shrink-0 overflow-x-auto">
-              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                <button
-                  id="tab-admin-dashboard"
-                  type="button"
-                  onClick={() => setActiveTab('dashboard')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'dashboard'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/60 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <BarChart3 className="w-4 h-4 shrink-0 text-blue-600" />
-                  <span>Summary Dashboard</span>
-                  <span className="bg-blue-100 text-blue-800 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    Analytics
-                  </span>
-                </button>
-
-                <button
-                  id="tab-admin-profile"
-                  type="button"
-                  onClick={() => setActiveTab('profile')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'profile'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4 shrink-0" />
-                  <span>Clinic Profile & Address</span>
-                </button>
-
-                <button
-                  id="tab-admin-branches"
-                  type="button"
-                  onClick={() => setActiveTab('branches')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'branches'
-                      ? 'border-emerald-600 text-emerald-700 bg-emerald-50/60 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <MapPin className="w-4 h-4 shrink-0 text-emerald-600" />
-                  <span>Clinic Branches</span>
-                  <span className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    {branches.length}
-                  </span>
-                </button>
-
-                <button
-                  id="tab-admin-treatments"
-                  type="button"
-                  onClick={() => setActiveTab('treatments')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'treatments'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <DollarSign className="w-4 h-4 shrink-0" />
-                  <span>Treatments</span>
-                  <span className="bg-slate-200 text-slate-700 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    {treatments.length}
-                  </span>
-                </button>
-
-                <button
-                  id="tab-admin-doctors"
-                  type="button"
-                  onClick={() => setActiveTab('doctors')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'doctors'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4 shrink-0" />
-                  <span>Doctors</span>
-                  <span className="bg-slate-200 text-slate-700 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    {doctors.length}
-                  </span>
-                </button>
-
-                <button
-                  id="tab-admin-timings"
-                  type="button"
-                  onClick={() => setActiveTab('timings')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'timings'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <Clock className="w-4 h-4 shrink-0" />
-                  <span>Hours & Slots</span>
-                  <span className="bg-slate-200 text-slate-700 text-[10px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    {timings.activeSlots.length}
-                  </span>
-                </button>
-
-                <button
-                  id="tab-admin-settings"
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'settings'
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <Sliders className="w-4 h-4 shrink-0" />
-                  <span>Audit & Reset</span>
-                </button>
-
-                <button
-                  id="tab-admin-ai-insights"
-                  type="button"
-                  onClick={() => setActiveTab('ai_insights')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-extrabold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
-                    activeTab === 'ai_insights'
-                      ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60 rounded-t-lg'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 shrink-0 text-indigo-600 animate-pulse" />
-                  <span>AI Clinic Insights</span>
-                  <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                    Gemini
-                  </span>
-                </button>
+            <div className="bg-white border-b border-slate-200 px-4 sm:px-6 pt-1 flex items-center justify-between gap-3 shrink-0 overflow-x-auto">
+              <div className="flex items-center gap-1 shrink-0">
+                {[
+                  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+                  { id: 'treatments', label: 'Treatments', count: treatments.length, icon: DollarSign },
+                  { id: 'doctors', label: 'Doctors', count: doctors.length, icon: UserCheck },
+                  { id: 'branches', label: 'Branches', count: branches.length, icon: MapPin },
+                  { id: 'timings', label: 'Hours & Slots', icon: Clock },
+                  { id: 'profile', label: 'Clinic Info', icon: Building2 },
+                  { id: 'notifications', label: 'WhatsApp & SMS', icon: Zap },
+                  { id: 'settings', label: 'Settings', icon: Sliders },
+                  { id: 'ai_insights', label: 'AI Insights', icon: Sparkles },
+                ].map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      id={`tab-admin-${tab.id}`}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id as any)}
+                      className={`flex items-center gap-1.5 px-3 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
+                        isActive
+                          ? 'border-blue-600 text-blue-600 font-semibold'
+                          : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                      }`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span>{tab.label}</span>
+                      {tab.count !== undefined && (
+                        <span className="text-slate-400 text-xs font-normal ml-0.5">({tab.count})</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="flex items-center gap-2 pb-2 shrink-0">
+              <div className="flex items-center gap-2 pb-1 shrink-0">
                 <button
                   type="button"
                   onClick={fetchAllAdminData}
                   disabled={isLoadingData}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-medium text-xs shadow-2xs transition-colors cursor-pointer"
                   title="Reload from server"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 ${isLoadingData ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Refresh</span>
                 </button>
               </div>
@@ -3684,6 +3683,115 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                   </div>
                 </div>
 
+                {/* Firebase Cloud BaaS Engine Status & Auto-Sync Card */}
+                <div className="bg-gradient-to-br from-amber-50/60 via-orange-50/30 to-blue-50/40 rounded-xl border border-amber-200 p-4.5 space-y-3.5 shadow-xs">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black shadow-xs">
+                        <Cloud className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-950 flex items-center gap-2">
+                          Firebase Cloud Backend & Realtime Database
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            Active
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-600">
+                          Automatic real-time NoSQL synchronization for bookings, patient records, catalog, and branch hierarchy.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Auto-Sync Toggle Button */}
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-amber-300 shadow-xs">
+                      <span className={`w-2.5 h-2.5 rounded-full ${adminAutoSyncOn ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                      <span className="text-xs font-bold text-slate-800">Auto-Sync:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAdminAutoSync(!adminAutoSyncOn)}
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-extrabold transition-all cursor-pointer ${
+                          adminAutoSyncOn
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        {adminAutoSyncOn ? 'ENABLED' : 'PAUSED'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200/80">
+                      <div className="text-slate-400 font-bold text-[10px] uppercase">Firebase Project ID</div>
+                      <div className="font-mono font-bold text-slate-900 text-xs mt-0.5 truncate">{firebaseConfig.projectId}</div>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200/80">
+                      <div className="text-slate-400 font-bold text-[10px] uppercase">Firestore Database ID</div>
+                      <div className="font-mono font-bold text-blue-700 text-xs mt-0.5 truncate" title={firebaseConfig.firestoreDatabaseId}>
+                        {firebaseConfig.firestoreDatabaseId}
+                      </div>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200/80">
+                      <div className="text-slate-400 font-bold text-[10px] uppercase">Auto-Sync Status</div>
+                      <div className="font-bold text-emerald-700 text-xs mt-0.5">
+                        {adminAutoSyncOn ? 'Continuous (Every 45s)' : 'Manual Only'}
+                      </div>
+                      {adminLastSyncCount > 0 && (
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                          {adminLastSyncCount} records synced
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200/80">
+                      <div className="text-slate-400 font-bold text-[10px] uppercase">Last Cloud Sync</div>
+                      <div className="font-bold text-slate-800 text-xs mt-0.5 truncate">
+                        {adminLastSyncTime ? new Date(adminLastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Pending run'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Manual trigger buttons */}
+                  <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-amber-200/60">
+                    <button
+                      type="button"
+                      onClick={handleSyncBookingsToFirebase}
+                      disabled={isSyncingFirebaseBookings}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Cloud className={`w-3.5 h-3.5 ${isSyncingFirebaseBookings ? 'animate-bounce' : ''}`} />
+                      <span>{isSyncingFirebaseBookings ? 'Syncing Bookings…' : 'Sync All Bookings to Firestore'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncServicesToFirebase}
+                      disabled={isSyncingFirebaseServices || !treatments.length}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Database className={`w-3.5 h-3.5 ${isSyncingFirebaseServices ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingFirebaseServices ? 'Syncing Catalog…' : 'Sync Services to Firestore'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncHierarchyToFirebase}
+                      disabled={isSyncingHierarchy}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingHierarchy ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingHierarchy ? 'Syncing Hierarchy…' : 'Sync Branches Hierarchy'}</span>
+                    </button>
+                  </div>
+
+                  {firebaseStatus && (
+                    <div className="text-xs font-medium text-amber-900 bg-amber-100/70 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{firebaseStatus}</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Reset to Defaults Option */}
                 <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4.5 flex items-center justify-between gap-4 flex-wrap">
                   <div className="space-y-0.5">
@@ -3754,6 +3862,13 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
                     <p className="text-xs text-slate-400 italic">No previous modifications logged.</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: INSTANT WHATSAPP & SMS NOTIFICATIONS */}
+            {activeTab === 'notifications' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
+                <AdminNotificationsTab doctors={doctors} />
               </div>
             )}
 

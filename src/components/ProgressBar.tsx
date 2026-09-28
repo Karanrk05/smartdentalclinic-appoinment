@@ -1,25 +1,34 @@
 import React from 'react';
-import { Check } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 
-interface ProgressBarProps {
+export interface ProgressBarProps {
   currentStep: number;
   onStepClick?: (step: number) => void;
+  autoAdvanceEnabled?: boolean;
+  onToggleAutoAdvance?: (enabled: boolean) => void;
+  isAutoAdvancing?: boolean;
 }
 
 const STEPS = [
-  { step: 1, label: 'Treatment' },
+  { step: 1, label: 'Branch' },
   { step: 2, label: 'Dentist' },
-  { step: 3, label: 'Schedule' },
-  { step: 4, label: 'Details' },
-  { step: 5, label: 'Confirm' },
+  { step: 3, label: 'Service' },
+  { step: 4, label: 'Schedule' },
+  { step: 5, label: 'Details' },
+  { step: 6, label: 'Confirm' },
 ];
 
-export const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep, onStepClick }) => {
+export const ProgressBar: React.FC<ProgressBarProps> = ({
+  currentStep,
+  onStepClick,
+  isAutoAdvancing = false,
+}) => {
   const currentStepObj = STEPS.find((s) => s.step === currentStep) || STEPS[0];
 
   return (
-    <div className="sticky top-14 sm:top-16 z-40 bg-white/95 backdrop-blur-md border-b border-[#dbeafe] py-2.5 sm:py-3.5 shadow-xs select-none">
-      <div className="w-full max-w-3xl mx-auto px-3.5 sm:px-6">
+    <div className="sticky top-14 sm:top-16 z-40 bg-white/95 backdrop-blur-md border-b border-[#dbeafe] py-2.5 sm:py-3 shadow-xs select-none">
+      <div className="w-full max-w-3xl mx-auto px-3.5 sm:px-6 space-y-2">
+        {/* Step Indicator Circles Row */}
         <div className="flex items-center justify-between">
           {STEPS.map((s, idx) => {
             const isDone = currentStep > s.step;
@@ -82,13 +91,23 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep, onStepCli
           })}
         </div>
 
-        {/* Mobile-Only Active Step Indicator Subtext */}
-        <div className="flex sm:hidden items-center justify-between text-xs font-bold text-slate-500 pt-2 px-0.5">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
-            <span>Step {currentStep} of {STEPS.length}</span>
-          </span>
-          <span className="text-blue-600 font-black uppercase tracking-wider">{currentStepObj.label}</span>
+        {/* Sub-bar: Active Step & Subtle Auto-Advancing Pulse */}
+        <div className="flex items-center justify-between text-xs font-bold text-slate-500 pt-0.5 px-0.5 flex-wrap gap-2">
+          {/* Active step name and advancing banner */}
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${isAutoAdvancing ? 'bg-amber-500 animate-ping' : 'bg-blue-600 animate-pulse'}`}></span>
+              <span className="text-slate-700 font-bold">Step {currentStep} of {STEPS.length}:</span>
+              <span className="text-blue-600 font-extrabold uppercase tracking-wide">{currentStepObj.label}</span>
+            </span>
+
+            {isAutoAdvancing && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full animate-pulse shadow-xs">
+                <Sparkles className="w-3 h-3 text-amber-600 animate-spin" />
+                <span>Auto-advancing to next page…</span>
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

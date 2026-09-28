@@ -1,0 +1,28 @@
+{
+  "system": "Smart Dental Clinic Automated Weekly Backup",
+  "clinicName": "Smart Dental Clinic",
+  "lastBackupTimestamp": "2026-09-17T07:53:28.022Z",
+  "lastBackupFormatted": "Thu, Sep 17, 2026, 7:53 AM",
+  "nextBackupDue": "2026-09-24T07:53:28.022Z",
+  "intervalDays": 7,
+  "totalRecords": 0,
+  "backupTrigger": "Manual Admin Sync Request",
+  "version": "1.0",
+  "records": [],
+  "history": [
+    {
+      "backupId": "BKP_1789631608022",
+      "timestamp": "2026-09-17T07:53:28.022Z",
+      "formatted": "Thu, Sep 17, 2026, 7:53 AM",
+      "recordsCount": 0,
+      "trigger": "Manual Admin Sync Request"
+    },
+    {
+      "backupId": "BKP_1789631596387",
+      "timestamp": "2026-09-17T07:53:16.387Z",
+      "formatted": "Thu, Sep 17, 2026, 7:53 AM",
+      "recordsCount": 0,
+      "trigger": "ExcelDatabaseModal Open (Admin Routine)"
+    }
+  ]
+}

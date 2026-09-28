@@ -249,19 +249,14 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
 
   return (
     <div className="space-y-5 animate-fadeIn">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-2xl p-4 sm:p-6 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* Header Banner - Clean & Professional */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-xs flex items-center justify-center border border-white/20">
-              <BarChart3 className="w-5 h-5 text-white" />
-            </div>
-            <h3 className="text-lg sm:text-xl font-black tracking-tight">
-              Bookings Summary Dashboard
-            </h3>
-          </div>
-          <p className="text-xs sm:text-sm text-blue-100/90 mt-1 max-w-2xl font-medium">
-            Visual breakdown of appointments per dental treatment type, powered by live Excel database records.
+          <h3 className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight">
+            Bookings & Services Overview
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Appointment volume and treatment analytics synced with clinic database
           </p>
         </div>
 
@@ -270,101 +265,89 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
             type="button"
             onClick={fetchRecords}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 border border-white/25 text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 text-xs font-medium transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
             <span>{isLoading ? 'Syncing...' : 'Refresh Data'}</span>
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3.5 text-xs font-medium flex items-center justify-between">
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs font-medium flex items-center justify-between">
           <span>{error}</span>
           <button
             type="button"
             onClick={fetchRecords}
-            className="underline font-bold hover:text-rose-950"
+            className="underline font-semibold hover:text-rose-950"
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* KPI Stats Cards */}
+      {/* KPI Stats Cards - Minimal & Clear */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Bookings */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-bold text-slate-600">Total Bookings</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Calendar className="w-4 h-4" />
-            </div>
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            Total Bookings
           </div>
           <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               {isLoading ? '...' : totalBookingsCount}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-              Across all recorded treatments
+            <p className="text-xs text-slate-500 mt-1">
+              All appointments logged
             </p>
           </div>
         </div>
 
         {/* Confirmed / Active */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-bold text-slate-600">Active / Confirmed</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            Active / Confirmed
           </div>
           <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-black text-emerald-600 tracking-tight">
+            <div className="text-2xl sm:text-3xl font-bold text-emerald-600 tracking-tight">
               {isLoading ? '...' : confirmedCount}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+            <p className="text-xs text-slate-500 mt-1">
               {totalBookingsCount > 0
-                ? `${Math.round((confirmedCount / totalBookingsCount) * 100)}% confirmation rate`
-                : 'No active cancellations'}
+                ? `${Math.round((confirmedCount / totalBookingsCount) * 100)}% active rate`
+                : 'No cancellations'}
             </p>
           </div>
         </div>
 
         {/* Most Popular Treatment */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-bold text-slate-600">Top Treatment</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Award className="w-4 h-4" />
-            </div>
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between col-span-2 sm:col-span-1">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            Top Treatment
           </div>
           <div className="mt-2">
-            <div className="text-sm sm:text-base font-black text-slate-900 line-clamp-1">
+            <div className="text-base sm:text-lg font-bold text-slate-900 truncate" title={topTreatment ? topTreatment.name : 'None'}>
               {isLoading ? '...' : topTreatment ? topTreatment.name : 'None yet'}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+            <p className="text-xs text-slate-500 mt-1">
               {topTreatment
-                ? `${topTreatment.bookings} booking${topTreatment.bookings === 1 ? '' : 's'} (${Math.round((topTreatment.bookings / totalBookingsCount) * 100)}% share)`
-                : 'Awaiting patient appointments'}
+                ? `${topTreatment.bookings} bookings (${Math.round((topTreatment.bookings / totalBookingsCount) * 100)}% share)`
+                : 'Awaiting appointments'}
             </p>
           </div>
         </div>
 
         {/* Treatments Represented */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-bold text-slate-600">Active Services</span>
-            <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Layers className="w-4 h-4" />
-            </div>
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between col-span-2 sm:col-span-1">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            Active Services
           </div>
           <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-black text-purple-700 tracking-tight">
+            <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               {isLoading ? '...' : `${activeTreatmentsCount} / ${treatments.length}`}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-              Treatments with at least 1 booking
+            <p className="text-xs text-slate-500 mt-1">
+              Services with bookings
             </p>
           </div>
         </div>
@@ -374,21 +357,21 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-500" />
-            <h4 className="text-xs sm:text-sm font-bold text-slate-800">
-              Filter & Sort Dashboard
-            </h4>
+            <Filter className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-700">
+              Filter Records
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             {/* Branch Filter */}
-            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5">
-              <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <select
                 id="filter-dashboard-branch"
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
+                className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer text-xs"
               >
                 <option value="all">All Branches</option>
                 {branches.map((b) => (
@@ -400,12 +383,12 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
             </div>
 
             {/* Status Filter */}
-            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
               <select
                 id="filter-dashboard-status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
+                className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer text-xs"
               >
                 <option value="all">All Statuses</option>
                 <option value="confirmed">Confirmed Only</option>
@@ -414,13 +397,13 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
             </div>
 
             {/* Sort Order */}
-            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5">
-              <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <select
                 id="sort-dashboard-order"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
+                className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer text-xs"
               >
                 <option value="count_desc">Most Bookings</option>
                 <option value="count_asc">Least Bookings</option>
@@ -429,13 +412,13 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
             </div>
 
             {/* View Mode Toggle */}
-            <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-300 text-xs font-bold">
+            <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-medium">
               <button
                 type="button"
                 onClick={() => setActiveViewMode('both')}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                   activeViewMode === 'both'
-                    ? 'bg-white text-blue-700 shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -444,9 +427,9 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveViewMode('chart')}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                   activeViewMode === 'chart'
-                    ? 'bg-white text-blue-700 shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -455,9 +438,9 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveViewMode('table')}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                   activeViewMode === 'table'
-                    ? 'bg-white text-blue-700 shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -470,24 +453,21 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
 
       {/* BAR CHART VISUALIZER */}
       {(activeViewMode === 'both' || activeViewMode === 'chart') && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs">
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 sm:p-5 shadow-2xs">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
             <div>
-              <h4 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <span>Bookings per Treatment Type</span>
-                <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded-full">
-                  Bar Chart
-                </span>
+              <h4 className="text-sm font-semibold text-slate-900">
+                Bookings per Treatment Type
               </h4>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Total count of appointments booked for each dental service
+              <p className="text-xs text-slate-500 font-normal mt-0.5">
+                Total appointments booked for each dental service
               </p>
             </div>
 
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-xs bg-blue-600" />
-                <span className="font-semibold text-slate-700">Total Bookings</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                <span className="font-medium text-slate-600">Total Bookings</span>
               </div>
             </div>
           </div>
@@ -578,17 +558,17 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="py-3 px-4 w-12 text-center">#</th>
-                  <th className="py-3 px-4">Treatment Name</th>
-                  <th className="py-3 px-4">Price / Fee</th>
-                  <th className="py-3 px-4 text-center">Total Bookings</th>
-                  <th className="py-3 px-4">Volume Share</th>
-                  <th className="py-3 px-4 text-right">Confirmed / Cancelled</th>
+                  <th className="py-2.5 px-4 w-12 text-center">#</th>
+                  <th className="py-2.5 px-4">Treatment</th>
+                  <th className="py-2.5 px-4">Fee</th>
+                  <th className="py-2.5 px-4 text-center">Bookings</th>
+                  <th className="py-2.5 px-4">Share</th>
+                  <th className="py-2.5 px-4 text-right">Status Breakdown</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
+              <tbody className="divide-y divide-slate-100 font-normal">
                 {treatmentStats.map((item, index) => {
                   const sharePct = totalBookingsCount > 0
                     ? Math.round((item.bookings / totalBookingsCount) * 100)
@@ -597,41 +577,37 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
                   return (
                     <tr
                       key={item.name}
-                      className="hover:bg-blue-50/40 transition-colors"
+                      className="hover:bg-slate-50/70 transition-colors"
                     >
-                      <td className="py-3 px-4 text-center text-slate-400 font-bold">
+                      <td className="py-2.5 px-4 text-center text-slate-400 font-medium">
                         {index + 1}
                       </td>
 
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4">
                         <div className="flex items-center gap-2">
                           <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            className="w-2 h-2 rounded-full shrink-0"
                             style={{ backgroundColor: item.color }}
                           />
-                          <span className="font-bold text-slate-900">
+                          <span className="font-medium text-slate-900">
                             {item.name}
                           </span>
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-2.5 px-4 text-slate-600">
                         {item.price || '—'}
                       </td>
 
-                      <td className="py-3 px-4 text-center">
-                        <span className={`inline-block px-2.5 py-1 rounded-full font-black text-xs ${
-                          item.bookings > 0
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}>
+                      <td className="py-2.5 px-4 text-center">
+                        <span className={`font-semibold text-xs ${item.bookings > 0 ? 'text-slate-900' : 'text-slate-400'}`}>
                           {item.bookings}
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 w-40">
+                      <td className="py-2.5 px-4 w-40">
                         <div className="flex items-center gap-2">
-                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
                               style={{
@@ -640,19 +616,19 @@ export const AdminSummaryDashboard: React.FC<AdminSummaryDashboardProps> = ({
                               }}
                             />
                           </div>
-                          <span className="text-[11px] font-bold text-slate-600 shrink-0 w-8">
+                          <span className="text-xs text-slate-500 shrink-0 w-8">
                             {sharePct}%
                           </span>
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-emerald-700 font-bold">
+                      <td className="py-2.5 px-4 text-right text-xs">
+                        <span className="text-emerald-700 font-medium">
                           {item.confirmed} confirmed
                         </span>
                         {item.cancelled > 0 && (
-                          <span className="text-rose-600 font-medium ml-1.5 text-[11px]">
-                            ({item.cancelled} cancelled)
+                          <span className="text-slate-400 font-normal ml-1.5">
+                            · {item.cancelled} cancelled
                           </span>
                         )}
                       </td>

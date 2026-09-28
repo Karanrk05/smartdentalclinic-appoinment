@@ -7,6 +7,7 @@ interface MobileAppTabBarProps {
   onOpenHistory: () => void;
   onOpenExcel: () => void;
   onOpenAdmin: () => void;
+  onOpenDoctorMorning?: () => void;
 }
 
 export const MobileAppTabBar: React.FC<MobileAppTabBarProps> = ({
@@ -26,18 +27,18 @@ export const MobileAppTabBar: React.FC<MobileAppTabBarProps> = ({
         type="button"
         onClick={onGoToBooking}
         className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
-          currentStep >= 1 && currentStep <= 5
+          currentStep >= 1 && currentStep <= 6
             ? 'text-blue-600 font-bold'
             : 'text-slate-500 hover:text-slate-800'
         }`}
       >
-        <div className={`p-1 rounded-lg ${currentStep >= 1 && currentStep <= 5 ? 'bg-blue-50' : ''}`}>
+        <div className={`p-1 rounded-lg ${currentStep >= 1 && currentStep <= 6 ? 'bg-blue-50' : ''}`}>
           <Calendar className="w-4 h-4" />
         </div>
         <span className="text-[10px] leading-tight">Book</span>
       </button>
 
-      {/* Tab 2: History / Slips */}
+      {/* Tab 3: History / Slips */}
       <button
         type="button"
         onClick={onOpenHistory}
@@ -49,7 +50,7 @@ export const MobileAppTabBar: React.FC<MobileAppTabBarProps> = ({
         <span className="text-[10px] leading-tight">My Slips</span>
       </button>
 
-      {/* Tab 3: Excel Ledger */}
+      {/* Tab 4: Excel Ledger */}
       <button
         type="button"
         onClick={onOpenExcel}
@@ -61,7 +62,7 @@ export const MobileAppTabBar: React.FC<MobileAppTabBarProps> = ({
         <span className="text-[10px] leading-tight">Records</span>
       </button>
 
-      {/* Tab 4: Admin */}
+      {/* Tab 5: Admin */}
       <button
         type="button"
         onClick={onOpenAdmin}

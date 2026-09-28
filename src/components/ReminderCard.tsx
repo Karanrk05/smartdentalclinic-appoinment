@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bell,
   Smartphone,
@@ -6,9 +6,20 @@ import {
   Clock,
   Calendar,
   ExternalLink,
+  CheckCircle2,
+  Send,
+  Laptop,
 } from 'lucide-react';
 import { BookingState, ClinicProfile, DEFAULT_CLINIC_PROFILE } from '../types';
 import { formatSlotTime } from './ScheduleStep';
+import {
+  isPushSupported,
+  getPushPermissionState,
+  requestPushPermission,
+  scheduleTestPushReminder,
+  scheduleAppointmentPushReminders,
+  PushPermissionState,
+} from '../utils/browserPush';
 
 interface ReminderCardProps {
   booking: BookingState;
@@ -22,6 +33,36 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   const { selectedDate, selectedTime, patient, doctor, treatment, bookingRef } = booking;
   const fullName = `${patient.firstName} ${patient.lastName}`.trim() || 'Patient';
   const formattedTime = selectedTime ? formatSlotTime(selectedTime) : '10:00 AM';
+
+  const [pushPerm, setPushPerm] = useState<PushPermissionState>('default');
+  const [testSent, setTestSent] = useState(false);
+  const isMobile = typeof navigator !== 'undefined' && /mobile|android|iphone|ipad/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    if (isPushSupported()) {
+      setPushPerm(getPushPermissionState());
+    }
+  }, []);
+
+  const handleTogglePush = async () => {
+    if (pushPerm !== 'granted') {
+      const res = await requestPushPermission();
+      setPushPerm(res);
+      if (res === 'granted') {
+        scheduleAppointmentPushReminders(booking, clinicProfile);
+      }
+    } else {
+      // Fire quick 3s test
+      setTestSent(true);
+      scheduleTestPushReminder(
+        bookingRef || 'TEST-REF',
+        2,
+        `🦷 Dental Reminder: ${treatment?.name || 'Checkup'}`,
+        `Appointment with ${doctor?.name || 'Dr. Vikram Shah'} on ${selectedDate ? selectedDate.toLocaleDateString() : 'scheduled date'}. Arrive 10m early!`
+      );
+      setTimeout(() => setTestSent(false), 3000);
+    }
+  };
 
   // Calculate 10 minutes early arrival time
   let earlyArrivalFormatted = '10 min early';
@@ -131,6 +172,63 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">
             Enrolled
           </span>
+        </div>
+      </div>
+
+      {/* Browser Push API Fallback Channel */}
+      <div className="bg-white border-2 border-indigo-200/90 rounded-xl p-2.5 sm:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+            {isMobile ? <Smartphone className="w-4 h-4" /> : <Laptop className="w-4 h-4" />}
+          </div>
+          <div className="truncate">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-[#0f172a] text-[11px]">
+                Browser Push Alert (Fallback)
+              </span>
+              <span className="bg-indigo-100 text-indigo-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
+                Zero Cost
+              </span>
+            </div>
+            <div className="text-[10px] text-[#64748b] truncate">
+              {pushPerm === 'granted'
+                ? 'Active: Desktop & Mobile lockscreen push reminders'
+                : pushPerm === 'denied'
+                ? 'Notifications blocked in browser permissions'
+                : 'Click to receive local push reminders if WhatsApp/SMS fails'}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+          {pushPerm === 'granted' ? (
+            <button
+              type="button"
+              onClick={handleTogglePush}
+              disabled={testSent}
+              className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold transition-all flex items-center gap-1 cursor-pointer"
+              title="Test push notification right now"
+            >
+              <Send className="w-3 h-3 text-indigo-600" />
+              <span>{testSent ? 'Sending...' : 'Test Push (2s)'}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleTogglePush}
+              className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <Bell className="w-3 h-3" />
+              <span>Enable Push</span>
+            </button>
+          )}
+
+          {pushPerm === 'granted' && (
+            <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              Ready
+            </span>
+          )}
         </div>
       </div>
 

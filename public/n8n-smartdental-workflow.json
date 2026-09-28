@@ -1,0 +1,275 @@
+{
+  "name": "Doctor-Patient WhatsApp Appointment Notifier (SmartDental Connected)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-morning",
+      "name": "Every Morning 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dental-booking-webhook",
+        "options": {}
+      },
+      "id": "node-instant-booking-webhook",
+      "name": "Instant Booking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 520]
+    },
+    {
+      "parameters": {
+        "url": "https://ais-dev-epdhmmvcr2iav7pkrxllu7-98529498078.asia-east1.run.app/api/n8n/appointments/today",
+        "options": {}
+      },
+      "id": "node-get-appointments",
+      "name": "Get Today Appointments (SmartDental API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-check-rows",
+              "leftValue": "={{ $json.PatientName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-check-appointments",
+      "name": "Has Appointments?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "appointments",
+        "options": {}
+      },
+      "id": "node-aggregate",
+      "name": "Aggregate All Appointments",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a formatted daily summary for the doctor\nconst appointments = $input.first().json.appointments;\n\nlet summary = `☀️ *Good Morning, Doctor!* 🌟\\n`;\nsummary += `📅 *Today's Appointments - ${new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}*\\n\\n`;\n\nif (!appointments || appointments.length === 0) {\n  summary += \"✅ No appointments scheduled for today.\";\n} else {\n  summary += `📋 *Total: ${appointments.length} appointment(s)*\\n\\n`;\n  appointments.forEach((appt, i) => {\n    summary += `*${i + 1}. ${appt.PatientName}*\\n`;\n    summary += `   ⏰ Time: ${appt.AppointmentTime}\\n`;\n    summary += `   📞 Phone: ${appt.PatientPhone}\\n`;\n    summary += `   🏷️ Reason: ${appt.Reason || 'General Checkup'}\\n`;\n    if (i < appointments.length - 1) summary += `\\n`;\n  });\n  summary += `\\n━━━━━━━━━━━━━━\\nHave a productive clinical day! 🦷✨`;\n}\n\nreturn [{ json: { doctorMessage: summary, appointments } }];"
+      },
+      "id": "node-build-doctor-msg",
+      "name": "Build Doctor Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Get Today Appointments (SmartDental API)').first().json.DoctorPhone }}",
+        "textBody": "={{ $json.doctorMessage }}"
+      },
+      "id": "node-send-doctor-morning",
+      "name": "Send Morning Summary to Doctor",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [1440, 200],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_WHATSAPP_CRED_ID",
+          "name": "WhatsApp Business account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// For each appointment, build individual messages for doctor + patient\nconst appointments = $input.first().json.appointments;\nconst items = [];\n\nfor (const appt of (appointments || [])) {\n  // Doctor per-patient notification\n  const doctorMsg = `📌 *Appointment Alert*\\n\\nPatient: *${appt.PatientName}*\\nTime: *${appt.AppointmentTime}*\\nReason: ${appt.Reason || 'General Checkup'}\\nPhone: ${appt.PatientPhone}\\nRef: ${appt.BookingRef || ''}\\n\\nPlease prepare accordingly. 🦷`;\n\n  // Patient confirmation message  \n  const patientMsg = `✨ *Appointment Confirmation*\\n\\nDear *${appt.PatientName}*,\\n\\nYour dental appointment is confirmed! 🎉\\n\\n⏰ Time: *${appt.AppointmentTime}*\\n📅 Date: *${appt.AppointmentDate}*\\n👨‍⚕️ Doctor: *${appt.DoctorName}*\\n🏥 Address: ${appt.ClinicAddress || 'Our Clinic'}\\n\\nPlease arrive 10 minutes early.\\nThank you!`;\n\n  items.push({\n    json: {\n      patientName: appt.PatientName,\n      patientPhone: appt.PatientPhone,\n      doctorPhone: appt.DoctorPhone,\n      doctorName: appt.DoctorName,\n      appointmentTime: appt.AppointmentTime,\n      doctorMsg,\n      patientMsg\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "node-build-individual-msgs",
+      "name": "Build Individual Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $json.patientPhone }}",
+        "textBody": "={{ $json.patientMsg }}"
+      },
+      "id": "node-send-patient",
+      "name": "Send WhatsApp to Patient",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [1200, 440],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_WHATSAPP_CRED_ID",
+          "name": "WhatsApp Business account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $json.doctorPhone }}",
+        "textBody": "={{ $json.doctorMsg }}"
+      },
+      "id": "node-send-doctor-perpatient",
+      "name": "Send WhatsApp to Doctor (Per Appt)",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [1200, 560],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_WHATSAPP_CRED_ID",
+          "name": "WhatsApp Business account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "no-appts-note",
+              "name": "status",
+              "value": "No appointments today — no WhatsApp messages sent.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-no-appointments",
+      "name": "No Appointments Today",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [960, 600]
+    }
+  ],
+  "connections": {
+    "Every Morning 8AM": {
+      "main": [
+        [
+          {
+            "node": "Get Today Appointments (SmartDental API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today Appointments (SmartDental API)": {
+      "main": [
+        [
+          {
+            "node": "Has Appointments?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Appointments?": {
+      "main": [
+        [
+          {
+            "node": "Aggregate All Appointments",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Individual Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Appointments Today",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate All Appointments": {
+      "main": [
+        [
+          {
+            "node": "Build Doctor Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Doctor Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Morning Summary to Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Individual Messages": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp to Patient",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send WhatsApp to Doctor (Per Appt)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["healthcare", "whatsapp", "smartdental"]
+}

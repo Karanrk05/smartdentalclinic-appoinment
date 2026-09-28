@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { ProgressBar } from './components/ProgressBar';
-import { TreatmentStep } from './components/TreatmentStep';
+import { BranchStep } from './components/BranchStep';
 import { DoctorStep } from './components/DoctorStep';
+import { TreatmentStep } from './components/TreatmentStep';
 import { ScheduleStep, formatSlotTime, formatLocalDate } from './components/ScheduleStep';
 import { DetailsStep } from './components/DetailsStep';
 import { ConfirmStep } from './components/ConfirmStep';
@@ -14,12 +15,15 @@ import { AdminCornerModal } from './components/AdminCornerModal';
 import { PatientHistoryModal } from './components/PatientHistoryModal';
 import { AiPatientResponseModal } from './components/AiPatientResponseModal';
 import { SmartReminderModal, SmartReminderData } from './components/SmartReminderModal';
+import { DoctorMorningReminderModal } from './components/DoctorMorningReminderModal';
 import { Footer } from './components/Footer';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { MobileAppTabBar } from './components/MobileAppTabBar';
 import { GENERAL_TREATMENTS } from './data/treatments';
 import { BookingState, Doctor, PatientDetails, Treatment, ClinicProfile, DEFAULT_CLINIC_PROFILE, ClinicBranch, DEFAULT_BRANCHES } from './types';
+import { isDentistAtBranch, isServiceOfferedByDentist } from './data/branchHierarchy';
 import { addLocalBookedSlot, checkClientDailyReset } from './utils/slotManager';
+import { checkAndTriggerExcelMonthAutoDownload } from './utils/excelDbAutoArchive';
 import {
   getCachedClinicProfile,
   saveCachedClinicProfile,
@@ -31,6 +35,14 @@ import {
   saveCachedDoctors,
   enqueueOfflineBooking,
 } from './utils/offlineEngine';
+import { getOrRegisterServiceWorker, syncPendingPushReminders } from './utils/browserPush';
+import { 
+  saveBookingToFirestore, 
+  syncServicesToFirestore, 
+  syncBranchHierarchyToFirestore,
+  autoSyncAllRecordsToFirestore,
+  isAutoSyncEnabled
+} from './firebase';
 
 const STORAGE_KEY = 'smartdental_booking_draft';
 const STEP_STORAGE_KEY = 'smartdental_booking_step';
@@ -96,10 +108,11 @@ const getInitialStep = (initialBooking: BookingState): number => {
     const savedStep = localStorage.getItem(STEP_STORAGE_KEY);
     if (savedStep) {
       const step = parseInt(savedStep, 10);
-      if (step === 2 && initialBooking.treatment) return 2;
-      if (step === 3 && initialBooking.treatment && initialBooking.doctor) return 3;
-      if (step === 4 && initialBooking.treatment && initialBooking.doctor) return 4;
-      if (step === 5 && initialBooking.treatment && initialBooking.doctor) return 5;
+      if (step === 2 && initialBooking.branch) return 2;
+      if (step === 3 && initialBooking.branch && initialBooking.doctor) return 3;
+      if (step === 4 && initialBooking.branch && initialBooking.doctor && initialBooking.treatment) return 4;
+      if (step === 5 && initialBooking.branch && initialBooking.doctor && initialBooking.treatment) return 5;
+      if (step === 6 && initialBooking.branch && initialBooking.doctor && initialBooking.treatment) return 6;
     }
   } catch (err) {
     console.error('Failed to load saved step from localStorage:', err);
@@ -109,23 +122,26 @@ const getInitialStep = (initialBooking: BookingState): number => {
 
 const stepVariants: Variants = {
   enter: (dir: number) => ({
-    x: dir > 0 ? 32 : -32,
+    x: dir > 0 ? 20 : dir < 0 ? -20 : 0,
     opacity: 0,
+    scale: 0.992,
   }),
   center: {
     x: 0,
     opacity: 1,
+    scale: 1,
     transition: {
-      duration: 0.28,
-      ease: [0.16, 1, 0.3, 1] as const,
+      duration: 0.32,
+      ease: [0.22, 1, 0.36, 1] as const,
     },
   },
   exit: (dir: number) => ({
-    x: dir > 0 ? -32 : 32,
+    x: dir > 0 ? -16 : dir < 0 ? 16 : 0,
     opacity: 0,
+    scale: 0.992,
     transition: {
-      duration: 0.18,
-      ease: [0.7, 0, 0.84, 0] as const,
+      duration: 0.16,
+      ease: [0.32, 0, 0.67, 0] as const,
     },
   }),
 };
@@ -139,12 +155,26 @@ export default function App() {
   const [isPatientHistoryModalOpen, setIsPatientHistoryModalOpen] = useState<boolean>(false);
   const [patientHistoryQuery, setPatientHistoryQuery] = useState<string>('');
   const [isAiPatientResponseOpen, setIsAiPatientResponseOpen] = useState<boolean>(false);
+  const [isDoctorMorningModalOpen, setIsDoctorMorningModalOpen] = useState<boolean>(false);
   const [smartReminderAppointment, setSmartReminderAppointment] = useState<SmartReminderData | null>(null);
   const [treatmentsList, setTreatmentsList] = useState<Treatment[]>(() => getCachedTreatments());
   const [doctorsList, setDoctorsList] = useState<Doctor[]>(() => getCachedDoctors());
   const [branchesList, setBranchesList] = useState<ClinicBranch[]>(() => getCachedBranches());
   const [dataRefreshCounter, setDataRefreshCounter] = useState<number>(0);
   const [clinicProfile, setClinicProfile] = useState<ClinicProfile>(() => getCachedClinicProfile());
+  const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Auto-next is permanently enabled and workable on every page in the background
+  const autoAdvanceEnabled = true;
+  const [isAutoAdvancing, setIsAutoAdvancing] = useState<boolean>(false);
+
+  // Clear pending auto-advance timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, []);
 
   // Fetch clinic profile and clinical catalogs on mount and on admin refresh, saving to offline cache
   useEffect(() => {
@@ -164,6 +194,8 @@ export default function App() {
         if (data && data.success && Array.isArray(data.data)) {
           setTreatmentsList(data.data);
           saveCachedTreatments(data.data);
+          // Sync service catalog to Firebase Firestore
+          syncServicesToFirestore(data.data).catch(() => {});
         }
       })
       .catch(() => {});
@@ -187,18 +219,21 @@ export default function App() {
         }
       })
       .catch(() => {});
+
+    // Sync multi-branch hierarchy (Branch -> Dentists -> Services) to Firestore
+    syncBranchHierarchyToFirestore().catch(() => {});
   }, [dataRefreshCounter]);
 
   // Sync booking and currentStep to localStorage so accidental refresh preserves progress
   useEffect(() => {
-    if (currentStep >= 1 && currentStep <= 5) {
+    if (currentStep >= 1 && currentStep <= 6) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(booking));
         localStorage.setItem(STEP_STORAGE_KEY, currentStep.toString());
       } catch (err) {
         console.error('Failed to save booking draft to localStorage:', err);
       }
-    } else if (currentStep === 6) {
+    } else if (currentStep === 7) {
       // Completed appointment - clear draft from storage
       try {
         localStorage.removeItem(STORAGE_KEY);
@@ -209,6 +244,104 @@ export default function App() {
     }
   }, [booking, currentStep]);
 
+  // Initialize Browser Push Service Worker and active reminder sync
+  useEffect(() => {
+    // 1. Register service worker
+    getOrRegisterServiceWorker().catch(() => {});
+
+    // 2. Initial reminder sync
+    syncPendingPushReminders();
+
+    // 3. Periodic reminder sync interval every 25 seconds
+    const interval = setInterval(() => {
+      syncPendingPushReminders();
+    }, 25000);
+
+    // 4. Also sync when window gains focus or tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncPendingPushReminders();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 5. Listen for service worker notification click navigation
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PUSH_NOTIFICATION_CLICKED') {
+        // App is focused via notification click
+        syncPendingPushReminders();
+      }
+    };
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
+  }, []);
+
+  // 1-Month Excel Database Auto-Download Check (Runs silently in background on startup)
+  // Automatically downloads completed month's Excel sheet before reloading to a new sheet
+  useEffect(() => {
+    checkAndTriggerExcelMonthAutoDownload().catch(() => {});
+  }, []);
+
+  // Automated Firebase Cloud Auto-Sync Engine
+  useEffect(() => {
+    let isMounted = true;
+
+    const performFirebaseAutoSync = async (source: string = 'AutoSyncDaemon') => {
+      if (!isAutoSyncEnabled()) return;
+      try {
+        const res = await fetch('/api/patients');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+          if (isMounted) {
+            await autoSyncAllRecordsToFirestore(data.data, source);
+          }
+        }
+      } catch (err) {
+        console.warn('Firebase auto-sync background check:', err);
+      }
+    };
+
+    // 1. Initial sync after app hydration
+    const initialTimer = setTimeout(() => {
+      performFirebaseAutoSync('AppStartupAutoSync');
+    }, 2500);
+
+    // 2. Continuous background periodic sync interval every 45 seconds
+    const interval = setInterval(() => {
+      performFirebaseAutoSync('PeriodicAutoSyncDaemon');
+    }, 45000);
+
+    // 3. Online event sync
+    const handleOnline = () => {
+      performFirebaseAutoSync('OnlineReconnectAutoSync');
+    };
+    window.addEventListener('online', handleOnline);
+
+    // 4. Custom event for instant triggered auto-sync on booking actions
+    const handleTriggerSync = () => {
+      performFirebaseAutoSync('InstantTriggerAutoSync');
+    };
+    window.addEventListener('sdc_trigger_firebase_auto_sync', handleTriggerSync);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('sdc_trigger_firebase_auto_sync', handleTriggerSync);
+    };
+  }, []);
+
   const handleAdminDataUpdated = () => {
     setDataRefreshCounter((prev) => prev + 1);
   };
@@ -217,16 +350,54 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const triggerAutoAdvance = (targetStep: number, delayMs: number = 220) => {
+    if (!autoAdvanceEnabled) return;
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+    }
+    setIsAutoAdvancing(true);
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      setDirection(1);
+      setCurrentStep(targetStep);
+      scrollToTop();
+      autoAdvanceTimerRef.current = null;
+      setIsAutoAdvancing(false);
+    }, delayMs);
+  };
+
   const goToStep = (step: number) => {
-    if (step === 2 && !booking.treatment) return;
-    if (step === 3 && (!booking.treatment || !booking.doctor)) return;
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    setIsAutoAdvancing(false);
+    if (step === 2 && !booking.branch) return;
+    if (step === 3 && (!booking.branch || !booking.doctor)) return;
+    if (step === 4 && (!booking.branch || !booking.doctor || !booking.treatment)) return;
+    if (step === 5 && (!booking.branch || !booking.doctor || !booking.treatment || !booking.selectedDate || !booking.selectedTime)) return;
+    if (step === 6 && (!booking.branch || !booking.doctor || !booking.treatment || !booking.selectedDate || !booking.selectedTime)) return;
     setDirection(step > currentStep ? 1 : -1);
     setCurrentStep(step);
     scrollToTop();
   };
 
-  const handleSelectBranch = (branch: ClinicBranch) => {
-    setBooking((prev) => ({ ...prev, branch }));
+  const handleSelectBranch = (branch: ClinicBranch, autoAdvance: boolean = true) => {
+    setBooking((prev) => {
+      let doc = prev.doctor;
+      let treat = prev.treatment;
+      // If selected doctor is not at this branch, reset doctor and treatment
+      if (doc && !isDentistAtBranch(branch.id, doc.id)) {
+        doc = null;
+        treat = null;
+      } else if (doc && treat && !isServiceOfferedByDentist(branch.id, doc.id, treat.id)) {
+        treat = null;
+      }
+      return { ...prev, branch, doctor: doc, treatment: treat };
+    });
+    // Automatically transition to Dentist selection page upon user clicking a location
+    if (autoAdvance) {
+      triggerAutoAdvance(2, 220);
+    }
   };
 
   const handleOpenPatientHistory = (query: string = '') => {
@@ -234,12 +405,22 @@ export default function App() {
     setIsPatientHistoryModalOpen(true);
   };
 
-  const handleSelectTreatment = (treatment: Treatment) => {
-    setBooking((prev) => ({ ...prev, treatment }));
+  const handleSelectDoctor = (doctor: Doctor) => {
+    setBooking((prev) => {
+      let treat = prev.treatment;
+      if (treat && prev.branch && !isServiceOfferedByDentist(prev.branch.id, doctor.id, treat.id)) {
+        treat = null;
+      }
+      return { ...prev, doctor, treatment: treat };
+    });
+    // Automatically transition to Treatment/Service selection page upon clicking
+    triggerAutoAdvance(3, 220);
   };
 
-  const handleSelectDoctor = (doctor: Doctor) => {
-    setBooking((prev) => ({ ...prev, doctor }));
+  const handleSelectTreatment = (treatment: Treatment) => {
+    setBooking((prev) => ({ ...prev, treatment }));
+    // Automatically transition to Schedule page upon clicking
+    triggerAutoAdvance(4, 220);
   };
 
   const handleSelectDate = (selectedDate: Date) => {
@@ -248,6 +429,10 @@ export default function App() {
 
   const handleSelectTime = (selectedTime: string) => {
     setBooking((prev) => ({ ...prev, selectedTime }));
+    // Automatically transition to Patient Details page upon clicking an available time slot
+    if (selectedTime) {
+      triggerAutoAdvance(5, 240);
+    }
   };
 
   const handleChangePatient = (field: keyof PatientDetails, value: string) => {
@@ -322,6 +507,11 @@ export default function App() {
     // Check online status
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
+    // Persist booking and patient details directly to Firebase Firestore
+    saveBookingToFirestore(bookingPayload).catch((err) => {
+      console.warn('Firebase Firestore async booking save notice:', err);
+    });
+
     if (!isOnline) {
       // Offline mode: Queue booking locally
       enqueueOfflineBooking(bookingPayload, ref);
@@ -335,6 +525,15 @@ export default function App() {
         });
         if (!response.ok) {
           enqueueOfflineBooking(bookingPayload, ref);
+        } else {
+          const resData = await response.json();
+          if (resData && resData.instantNotifications) {
+            setBooking((prev) => ({
+              ...prev,
+              bookingRef: ref,
+              instantNotifications: resData.instantNotifications,
+            }));
+          }
         }
       } catch (err) {
         console.warn('Network issue while booking. Queued offline for auto-sync:', err);
@@ -348,7 +547,7 @@ export default function App() {
     } catch (e) {}
     setDataRefreshCounter((c) => c + 1);
 
-    goToStep(6);
+    goToStep(7);
   };
 
   const handleReset = () => {
@@ -374,23 +573,25 @@ export default function App() {
         onOpenExcelModal={() => setIsExcelModalOpen(true)}
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
         onOpenPatientHistoryModal={() => handleOpenPatientHistory()}
+        onOpenDoctorMorningModal={() => setIsDoctorMorningModalOpen(true)}
       />
 
       {/* Hero Banner */}
       <Hero />
 
-      {/* Step Progress Bar (steps 1 to 5) */}
-      {currentStep <= 5 && (
+      {/* Step Progress Bar (steps 1 to 6) */}
+      {currentStep <= 6 && (
         <ProgressBar
           currentStep={currentStep}
           onStepClick={(step) => goToStep(step)}
+          isAutoAdvancing={isAutoAdvancing}
         />
       )}
 
       {/* Main Container Card */}
       <main className="w-full max-w-3xl mx-auto px-3.5 sm:px-6 mt-6 sm:mt-8 relative z-10 flex-1">
-        <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(37,99,235,0.08)] border border-[#dbeafe] p-5 sm:p-8 overflow-hidden">
-          <AnimatePresence mode="wait" custom={direction}>
+        <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(37,99,235,0.08)] border border-[#dbeafe] p-5 sm:p-8 overflow-hidden transition-all duration-300">
+          <AnimatePresence mode="wait" custom={direction} initial={false}>
             <motion.div
               key={currentStep}
               custom={direction}
@@ -399,31 +600,48 @@ export default function App() {
               animate="center"
               exit="exit"
               className="w-full"
+              style={{ willChange: 'transform, opacity' }}
             >
               {currentStep === 1 && (
-                <TreatmentStep
-                  selectedTreatment={booking.treatment}
-                  onSelectTreatment={handleSelectTreatment}
-                  onNext={() => goToStep(2)}
-                  refreshTrigger={dataRefreshCounter}
+                <BranchStep
                   selectedBranch={booking.branch}
                   onSelectBranch={handleSelectBranch}
+                  onNext={() => goToStep(2)}
+                  refreshTrigger={dataRefreshCounter}
+                  autoAdvanceEnabled={autoAdvanceEnabled}
                 />
               )}
 
-              {currentStep === 2 && booking.treatment && (
+              {currentStep === 2 && booking.branch && (
                 <DoctorStep
-                  selectedTreatment={booking.treatment}
+                  branch={booking.branch}
                   selectedDoctor={booking.doctor}
                   onSelectDoctor={handleSelectDoctor}
+                  onChangeBranch={() => goToStep(1)}
                   onBack={() => goToStep(1)}
                   onNext={() => goToStep(3)}
                   refreshTrigger={dataRefreshCounter}
-                  branch={booking.branch}
+                  autoAdvanceEnabled={autoAdvanceEnabled}
+                  onOpenDoctorMorning={() => setIsDoctorMorningModalOpen(true)}
                 />
               )}
 
-              {currentStep === 3 && booking.treatment && booking.doctor && (
+              {currentStep === 3 && booking.branch && booking.doctor && (
+                <TreatmentStep
+                  selectedBranch={booking.branch}
+                  selectedDoctor={booking.doctor}
+                  selectedTreatment={booking.treatment}
+                  onSelectTreatment={handleSelectTreatment}
+                  onBack={() => goToStep(2)}
+                  onNext={() => goToStep(4)}
+                  onChangeBranch={() => goToStep(1)}
+                  onChangeDoctor={() => goToStep(2)}
+                  refreshTrigger={dataRefreshCounter}
+                  autoAdvanceEnabled={autoAdvanceEnabled}
+                />
+              )}
+
+              {currentStep === 4 && booking.branch && booking.doctor && booking.treatment && (
                 <ScheduleStep
                   selectedTreatment={booking.treatment}
                   selectedDoctor={booking.doctor}
@@ -431,34 +649,35 @@ export default function App() {
                   selectedTime={booking.selectedTime}
                   onSelectDate={handleSelectDate}
                   onSelectTime={handleSelectTime}
-                  onBack={() => goToStep(2)}
-                  onNext={() => goToStep(4)}
-                  refreshTrigger={dataRefreshCounter}
-                  branch={booking.branch}
-                />
-              )}
-
-              {currentStep === 4 && (
-                <DetailsStep
-                  patient={booking.patient}
-                  treatment={booking.treatment}
-                  onChangePatient={handleChangePatient}
                   onBack={() => goToStep(3)}
                   onNext={() => goToStep(5)}
+                  refreshTrigger={dataRefreshCounter}
+                  branch={booking.branch}
+                  autoAdvanceEnabled={autoAdvanceEnabled}
                 />
               )}
 
               {currentStep === 5 && (
+                <DetailsStep
+                  patient={booking.patient}
+                  treatment={booking.treatment}
+                  onChangePatient={handleChangePatient}
+                  onBack={() => goToStep(4)}
+                  onNext={() => goToStep(6)}
+                />
+              )}
+
+              {currentStep === 6 && (
                 <ConfirmStep
                   booking={booking}
                   clinicProfile={clinicProfile}
-                  onBack={() => goToStep(4)}
+                  onBack={() => goToStep(5)}
                   onConfirm={handleConfirm}
                   onUpdatePatient={handleChangePatient}
                 />
               )}
 
-              {currentStep === 6 && (
+              {currentStep === 7 && (
                 <SuccessStep
                   booking={booking}
                   clinicProfile={clinicProfile}
@@ -493,6 +712,7 @@ export default function App() {
         onOpenHistory={() => handleOpenPatientHistory()}
         onOpenExcel={() => setIsExcelModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenDoctorMorning={() => setIsDoctorMorningModalOpen(true)}
       />
 
       {/* Backend Excel Database Modal */}
@@ -500,6 +720,7 @@ export default function App() {
         isOpen={isExcelModalOpen}
         onClose={() => setIsExcelModalOpen(false)}
         clinicProfile={clinicProfile}
+        onRefreshNeeded={handleAdminDataUpdated}
         onOpenSmartReminder={(data) => setSmartReminderAppointment(data)}
         onOpenAiInsights={() => {
           setIsExcelModalOpen(false);
@@ -547,6 +768,13 @@ export default function App() {
         doctorName={booking.doctor?.name || undefined}
         appointmentDate={booking.selectedDate ? formatLocalDate(booking.selectedDate) : undefined}
         appointmentTime={booking.selectedTime ? formatSlotTime(booking.selectedTime) : undefined}
+      />
+
+      {/* Doctor Daily Morning Reminder & Schedule Modal */}
+      <DoctorMorningReminderModal
+        isOpen={isDoctorMorningModalOpen}
+        onClose={() => setIsDoctorMorningModalOpen(false)}
+        clinicPhone={clinicProfile.phone}
       />
 
       {/* Subtle Background Watermark */}

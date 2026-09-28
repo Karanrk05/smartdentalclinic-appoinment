@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Firebase Schema Blueprint",
+  "description": "Firestore collections and security schema for SmileCare Dental appointment booking system",
+  "entities": {
+    "branches": {
+      "title": "Branch",
+      "description": "Clinic physical branch locations with nested dentists and services subcollections: Branch -> Dentists -> Services",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "shortName": { "type": "string" },
+        "address": { "type": "string" },
+        "areaCityPincode": { "type": "string" },
+        "phone": { "type": "string" },
+        "emergencyPhone": { "type": "string" },
+        "email": { "type": "string" },
+        "landmark": { "type": "string" },
+        "timings": { "type": "string" },
+        "isMain": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "dentistIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["id", "name", "address", "phone"]
+    },
+    "bookings": {
+      "title": "Booking",
+      "description": "Dental appointments and booking confirmations",
+      "type": "object",
+      "properties": {
+        "bookingRef": { "type": "string", "description": "Unique booking reference identifier" },
+        "patientName": { "type": "string", "description": "Full name of the patient" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "dob": { "type": "string" },
+        "patientType": { "type": "string" },
+        "treatmentName": { "type": "string" },
+        "treatmentDuration": { "type": "string" },
+        "estimatedFee": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "appointmentDate": { "type": "string" },
+        "appointmentTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["Confirmed", "Completed", "Cancelled", "Rescheduled"] },
+        "notes": { "type": "string" },
+        "branchName": { "type": "string" },
+        "paymentMode": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["bookingRef", "patientName", "phone", "treatmentName", "doctorName", "appointmentDate", "appointmentTime", "status"]
+    },
+    "patients": {
+      "title": "Patient",
+      "description": "Registered patient directory and records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "dob": { "type": "string" },
+        "patientType": { "type": "string" },
+        "totalVisits": { "type": "number" },
+        "lastBookingRef": { "type": "string" },
+        "lastVisitDate": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["fullName", "phone"]
+    },
+    "services": {
+      "title": "Service",
+      "description": "Clinic dental treatments and service catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "desc": { "type": "string" },
+        "dur": { "type": "string" },
+        "price": { "type": "string" },
+        "icon": { "type": "string" },
+        "cat": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "dur", "price"]
+    },
+    "doctors": {
+      "title": "Doctor",
+      "description": "Clinic dentists and dental specialists",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "spec": { "type": "string" },
+        "experience": { "type": "string" },
+        "rating": { "type": "number" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["name", "spec"]
+    },
+    "sync_metadata": {
+      "title": "Sync Metadata",
+      "description": "Auto-sync status, timestamps, and record statistics for automatic Firebase synchronization",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lastAutoSync": { "type": "string" },
+        "totalRecords": { "type": "number" },
+        "activeBranchCount": { "type": "number" },
+        "databaseId": { "type": "string" },
+        "syncedBy": { "type": "string" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["lastAutoSync", "status"]
+    },
+    "waitlist": {
+      "title": "Waitlist",
+      "description": "Priority waitlist entries for fully booked time slots with automated WhatsApp alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientPhone": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "branchId": { "type": "string" },
+        "treatmentName": { "type": "string" },
+        "status": { "type": "string", "enum": ["WAITING", "NOTIFIED", "CLAIMED", "CANCELLED"] },
+        "createdAt": { "type": "string" },
+        "notifiedAt": { "type": "string" }
+      },
+      "required": ["date", "timeSlot", "patientName", "patientPhone", "status"]
+    }
+  }
+}
