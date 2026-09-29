@@ -97,7 +97,7 @@ RECOMMENDATION: {"treatmentId": "t3", "treatmentName": "Scaling & Polishing", "d
     });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: formattedContents,
       config: {
         systemInstruction,
@@ -273,7 +273,7 @@ OUTPUT FORMAT (JSON strictly):
 Generate the official clinic response following the JSON schema.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction,
@@ -434,7 +434,7 @@ OUTPUT JSON:
 - Patient Notes: ${notes || 'None'}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction,
@@ -589,7 +589,7 @@ Generate an executive clinical and operational intelligence report formatted in 
 ${JSON.stringify(dataSummary, null, 2)}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction,

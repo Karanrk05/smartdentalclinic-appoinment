@@ -34,30 +34,38 @@ export const DoctorStep: React.FC<DoctorStepProps> = ({
   const [advancingDocId, setAdvancingDocId] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsLoading(true);
-    // Fetch dentists exclusively for this specific branch
-    fetch(`/api/branches/${branchId}/dentists`)
-      .then((res) => {
-        if (!res.ok) {
-          // Fallback query
-          return fetch(`/api/doctors?branchId=${branchId}`).then((r) => r.json());
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
-          setDoctorsList(data.data);
-        } else {
+    const loadDoctors = () => {
+      setIsLoading(true);
+      fetch(`/api/branches/${branchId}/dentists`)
+        .then((res) => {
+          if (!res.ok) {
+            return fetch(`/api/doctors?branchId=${branchId}`).then((r) => r.json());
+          }
+          return res.json();
+        })
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+            setDoctorsList(data.data);
+          } else {
+            setDoctorsList(getDentistsForBranch(branchId));
+          }
+        })
+        .catch((err) => {
+          console.warn(`Fallback to local branch hierarchy dentists for ${branchId}:`, err);
           setDoctorsList(getDentistsForBranch(branchId));
-        }
-      })
-      .catch((err) => {
-        console.warn(`Fallback to local branch hierarchy dentists for ${branchId}:`, err);
-        setDoctorsList(getDentistsForBranch(branchId));
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    };
+
+    loadDoctors();
+
+    const handleAdminEvent = () => loadDoctors();
+    window.addEventListener('sdc_admin_data_updated', handleAdminEvent);
+    return () => {
+      window.removeEventListener('sdc_admin_data_updated', handleAdminEvent);
+    };
   }, [branchId, refreshTrigger]);
 
   const handleCardClick = (doc: Doctor) => {

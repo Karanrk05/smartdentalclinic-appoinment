@@ -25,27 +25,37 @@ export const BranchStep: React.FC<BranchStepProps> = ({
   const [advancingBranchId, setAdvancingBranchId] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsLoading(true);
-    fetch('/api/branches')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
-          const active = data.data.filter((b: ClinicBranch) => b.isActive !== false);
-          setBranches(active);
+    const loadBranches = () => {
+      setIsLoading(true);
+      fetch('/api/branches')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+            const active = data.data.filter((b: ClinicBranch) => b.isActive !== false);
+            setBranches(active);
 
-          // If no branch is currently chosen, default to main without auto-advancing
-          if (!selectedBranch) {
-            const main = active.find((b: ClinicBranch) => b.isMain) || active[0];
-            if (main) onSelectBranch(main, false);
+            // If no branch is currently chosen, default to main without auto-advancing
+            if (!selectedBranch) {
+              const main = active.find((b: ClinicBranch) => b.isMain) || active[0];
+              if (main) onSelectBranch(main, false);
+            }
           }
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not load branches from API, using default hierarchy:', err);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+        })
+        .catch((err) => {
+          console.warn('Could not load branches from API, using default hierarchy:', err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    };
+
+    loadBranches();
+
+    const handleAdminEvent = () => loadBranches();
+    window.addEventListener('sdc_admin_data_updated', handleAdminEvent);
+    return () => {
+      window.removeEventListener('sdc_admin_data_updated', handleAdminEvent);
+    };
   }, [refreshTrigger]);
 
   const handleCardClick = (branch: ClinicBranch) => {

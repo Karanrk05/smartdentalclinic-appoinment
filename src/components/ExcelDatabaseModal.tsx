@@ -24,6 +24,7 @@ import {
   Ban,
   Star,
   Cloud,
+  Edit3,
 } from 'lucide-react';
 import { PatientRecord, ClinicProfile, DEFAULT_CLINIC_PROFILE, WeeklyBackupMetadata } from '../types';
 import { 
@@ -101,6 +102,59 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
   const [monthLedgerStatus, setMonthLedgerStatus] = useState<MonthLedgerStatusResponse | null>(null);
   const [isArchivingMonth, setIsArchivingMonth] = useState<boolean>(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState<boolean>(false);
+
+  // Edit Patient Details state
+  const [editingPatientRecord, setEditingPatientRecord] = useState<PatientRecord | null>(null);
+  const [editPatientForm, setEditPatientForm] = useState<Partial<PatientRecord>>({});
+  const [isSavingPatientEdit, setIsSavingPatientEdit] = useState<boolean>(false);
+
+  const handleStartEditPatient = (record: PatientRecord) => {
+    setEditingPatientRecord(record);
+    setEditPatientForm({
+      patientName: record.patientName,
+      phone: record.phone,
+      email: record.email || '',
+      notes: record.notes || '',
+      status: record.status || 'Confirmed',
+      paymentMode: record.paymentMode || 'Pay at Clinic',
+    });
+  };
+
+  const handleSavePatientEdit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingPatientRecord) return;
+    setIsSavingPatientEdit(true);
+    try {
+      const res = await fetch(`/api/bookings/${encodeURIComponent(editingPatientRecord.bookingRef)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editPatientForm),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        const updatedList = records.map((r) =>
+          r.bookingRef === editingPatientRecord.bookingRef ? { ...r, ...editPatientForm } : r
+        );
+        setRecords(updatedList);
+        saveLocalCachedPatientRecords(updatedList);
+        if (selectedRecord && selectedRecord.bookingRef === editingPatientRecord.bookingRef) {
+          setSelectedRecord({ ...selectedRecord, ...editPatientForm });
+        }
+        setActionStatus(`Updated patient details for ${editingPatientRecord.bookingRef} successfully!`);
+        setTimeout(() => setActionStatus(null), 4000);
+        setEditingPatientRecord(null);
+        window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'booking_updated' } }));
+        if (onRefreshNeeded) onRefreshNeeded();
+      } else {
+        alert(data.error || 'Failed to update patient record.');
+      }
+    } catch (err) {
+      alert('Network error while saving patient details.');
+    } finally {
+      setIsSavingPatientEdit(false);
+    }
+  };
 
   const refreshMonthLedgerStatus = async () => {
     const status = await fetchMonthLedgerStatus();
@@ -1061,58 +1115,70 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                     </button>
                   )}
 
-                  {/* Reschedule Appointment */}
-                  <button
-                    type="button"
-                    onClick={() => handleStartReschedule(selectedRecord)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
-                    title="Reschedule appointment to a new date and time slot"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reschedule Slot</span>
-                  </button>
-
-                  {/* Cancel Appointment (triggers automatic Cancellation WhatsApp to patient & doctor) */}
-                  {selectedRecord.status !== 'Cancelled' && (
+                    {/* Edit Patient Details */}
                     <button
                       type="button"
-                      onClick={() => handleStartCancel(selectedRecord)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
-                      title="Cancel appointment and automatically send WhatsApp notifications to patient & doctor"
+                      onClick={() => handleStartEditPatient(selectedRecord)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
+                      title="Edit patient details, contact numbers, remarks, or booking status"
                     >
-                      <Ban className="w-3.5 h-3.5" />
-                      <span>Cancel & Auto-Notify WhatsApp</span>
+                      <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Edit Details</span>
                     </button>
-                  )}
 
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (confirm(`Remove appointment ${selectedRecord.bookingRef} for ${selectedRecord.patientName}?`)) {
-                        try {
-                          await fetch(`/api/bookings/${encodeURIComponent(selectedRecord.bookingRef)}`, { method: 'DELETE' });
-                          // Auto-delete from Firebase Firestore
-                          deleteBookingFromFirestore(selectedRecord.bookingRef).catch(() => {});
-                          window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
-                          const updated = records.filter(r => r.bookingRef !== selectedRecord.bookingRef);
-                          setRecords(updated);
-                          saveLocalCachedPatientRecords(updated);
-                          setSelectedRecord(null);
-                          setActionStatus(`Appointment ${selectedRecord.bookingRef} removed from database & synced.`);
-                          setTimeout(() => setActionStatus(null), 3500);
-                          if (onRefreshNeeded) onRefreshNeeded();
-                        } catch (err) {
-                          console.error('Error deleting single booking:', err);
+                    {/* Reschedule Appointment */}
+                    <button
+                      type="button"
+                      onClick={() => handleStartReschedule(selectedRecord)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
+                      title="Reschedule appointment to a new date and time slot"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Reschedule Slot</span>
+                    </button>
+
+                    {/* Cancel Appointment (triggers automatic Cancellation WhatsApp to patient & doctor) */}
+                    {selectedRecord.status !== 'Cancelled' && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartCancel(selectedRecord)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
+                        title="Cancel appointment and automatically send WhatsApp notifications to patient & doctor"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>Cancel & Auto-Notify WhatsApp</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm(`Remove appointment ${selectedRecord.bookingRef} for ${selectedRecord.patientName}?`)) {
+                          try {
+                            await fetch(`/api/bookings/${encodeURIComponent(selectedRecord.bookingRef)}`, { method: 'DELETE' });
+                            // Auto-delete from Firebase Firestore
+                            deleteBookingFromFirestore(selectedRecord.bookingRef).catch(() => {});
+                            window.dispatchEvent(new CustomEvent('sdc_trigger_firebase_auto_sync'));
+                            window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'booking_deleted', bookingRef: selectedRecord.bookingRef } }));
+                            const updated = records.filter(r => r.bookingRef !== selectedRecord.bookingRef);
+                            setRecords(updated);
+                            saveLocalCachedPatientRecords(updated);
+                            setSelectedRecord(null);
+                            setActionStatus(`Appointment ${selectedRecord.bookingRef} removed from database & synced.`);
+                            setTimeout(() => setActionStatus(null), 3500);
+                            if (onRefreshNeeded) onRefreshNeeded();
+                          } catch (err) {
+                            console.error('Error deleting single booking:', err);
+                          }
                         }
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
-                    title="Remove this specific appointment"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Record</span>
-                  </button>
-                </div>
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-extrabold text-xs shadow-xs transition-colors cursor-pointer"
+                      title="Remove this specific appointment"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Record</span>
+                    </button>
+                  </div>
               </div>
             </div>
           )}
@@ -1369,6 +1435,125 @@ export const ExcelDatabaseModal: React.FC<ExcelDatabaseModalProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Patient Record Modal Dialog */}
+      {editingPatientRecord && (
+        <div className="fixed inset-0 z-70 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-amber-200 animate-scale-in">
+            <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-white" />
+                <div>
+                  <h3 className="font-extrabold text-base">Edit Patient & Appointment Details</h3>
+                  <p className="text-[11px] text-amber-100 font-mono">Ref: {editingPatientRecord.bookingRef}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPatientRecord(null)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePatientEdit} className="p-6 space-y-4 text-left">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Patient Full Name</label>
+                  <input
+                    type="text"
+                    value={editPatientForm.patientName || ''}
+                    onChange={(e) => setEditPatientForm({ ...editPatientForm, patientName: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={editPatientForm.phone || ''}
+                    onChange={(e) => setEditPatientForm({ ...editPatientForm, phone: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editPatientForm.email || ''}
+                  onChange={(e) => setEditPatientForm({ ...editPatientForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
+                  <select
+                    value={editPatientForm.status || 'Confirmed'}
+                    onChange={(e) => setEditPatientForm({ ...editPatientForm, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden bg-white"
+                  >
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Rescheduled">Rescheduled</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Payment Mode</label>
+                  <select
+                    value={editPatientForm.paymentMode || 'Pay at Clinic'}
+                    onChange={(e) => setEditPatientForm({ ...editPatientForm, paymentMode: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden bg-white"
+                  >
+                    <option value="Pay at Clinic">Pay at Clinic</option>
+                    <option value="UPI / QR Code">UPI / QR Code</option>
+                    <option value="Credit / Debit Card">Credit / Debit Card</option>
+                    <option value="Net Banking">Net Banking</option>
+                    <option value="Dental Insurance">Dental Insurance</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Clinical Remarks / Patient Notes</label>
+                <textarea
+                  rows={2}
+                  value={editPatientForm.notes || ''}
+                  onChange={(e) => setEditPatientForm({ ...editPatientForm, notes: e.target.value })}
+                  placeholder="e.g. Patient requested morning slot, sensitive teeth"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setEditingPatientRecord(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPatientEdit}
+                  className="px-5 py-2 rounded-xl text-xs font-extrabold bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-500/25 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Edit3 className={`w-3.5 h-3.5 ${isSavingPatientEdit ? 'animate-spin' : ''}`} />
+                  <span>{isSavingPatientEdit ? 'Saving…' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

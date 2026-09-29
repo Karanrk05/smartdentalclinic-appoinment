@@ -406,8 +406,11 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         setClinicProfile(data.data);
         setProfileForm(data.data);
         setProfileSaveSuccess(true);
+        saveCachedClinicProfile(data.data);
         triggerFeedback('Clinic profile, address & mobile number updated permanently!');
         if (onClinicProfileUpdated) onClinicProfileUpdated(data.data);
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'clinic-profile', data: data.data } }));
         setTimeout(() => setProfileSaveSuccess(false), 4000);
       } else {
         setProfileError(data.error || 'Failed to save clinic profile');
@@ -434,8 +437,11 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         setClinicProfile(data.data);
         setProfileForm(data.data);
         setProfileSaveSuccess(true);
+        saveCachedClinicProfile(data.data);
         triggerFeedback('Clinic profile reset to factory defaults.');
         if (onClinicProfileUpdated) onClinicProfileUpdated(data.data);
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'clinic-profile', data: data.data } }));
         setTimeout(() => setProfileSaveSuccess(false), 4000);
       }
     } catch (err) {
@@ -530,8 +536,10 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         setBranchForm({ ...saved });
         setBranchSaveSuccess(true);
         setIsAddingBranch(false);
+        saveCachedBranches(data.data);
         triggerFeedback(`✅ Saved branch "${payload.shortName || payload.name}" successfully!`);
         if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'branches', data: data.data } }));
         setTimeout(() => setBranchSaveSuccess(false), 4000);
       } else {
         setBranchError(data.error || 'Failed to save branch to server.');
@@ -645,7 +653,10 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         setTreatments(updatedList);
         setEditingTreatmentId(null);
         setTreatmentForm({});
+        saveCachedTreatments(updatedList);
         triggerFeedback('✅ Treatment price & details saved permanently to clinic database!');
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'treatments', data: updatedList } }));
         fetchAllAdminData();
       } else {
         setErrorMessage('Failed to save treatment to server.');
@@ -674,7 +685,9 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
 
       if (res.ok) {
         const data = await res.json();
-        setTreatments((prev) => [...prev, data.data]);
+        const nextList = [...treatments, data.data];
+        setTreatments(nextList);
+        saveCachedTreatments(nextList);
         setIsAddingTreatment(false);
         setNewTreatment({
           icon: '🦷',
@@ -685,6 +698,8 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           cat: 'general',
         });
         triggerFeedback(`✅ Added "${data.data.name}" at price ${data.data.price}`);
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'treatments', data: nextList } }));
         fetchAllAdminData();
       } else {
         setErrorMessage('Failed to add new treatment.');
@@ -740,7 +755,10 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         setDoctors(updatedList);
         setEditingDoctorId(null);
         setDoctorForm({});
+        saveCachedDoctors(updatedList);
         triggerFeedback('✅ Doctor name & profile saved permanently to clinic database!');
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'doctors', data: updatedList } }));
         fetchAllAdminData();
       } else {
         setErrorMessage('Failed to save doctor changes to server.');
@@ -769,7 +787,9 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
 
       if (res.ok) {
         const data = await res.json();
-        setDoctors((prev) => [...prev, data.data]);
+        const nextList = [...doctors, data.data];
+        setDoctors(nextList);
+        saveCachedDoctors(nextList);
         setIsAddingDoctor(false);
         setNewDoctor({
           name: '',
@@ -782,6 +802,8 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           avatarIcon: '👨‍⚕️',
         });
         triggerFeedback(`✅ Added doctor "${data.data.name}" to directory.`);
+        if (onDataUpdated) onDataUpdated();
+        window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'doctors', data: nextList } }));
         fetchAllAdminData();
       } else {
         setErrorMessage('Failed to add new doctor.');
@@ -972,12 +994,16 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         });
 
         if (res.ok) {
-          setTreatments((prev) => prev.filter((t) => t.id !== id));
+          const nextList = treatments.filter((t) => t.id !== id);
+          setTreatments(nextList);
+          saveCachedTreatments(nextList);
           if (editingTreatmentId === id) {
             setEditingTreatmentId(null);
             setTreatmentForm({});
           }
           triggerFeedback(`🗑️ Removed "${name}" from treatments catalog.`);
+          if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'treatments', data: nextList } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to delete treatment from server.');
@@ -990,12 +1016,16 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         });
 
         if (res.ok) {
-          setDoctors((prev) => prev.filter((d) => d.id !== id));
+          const nextList = doctors.filter((d) => d.id !== id);
+          setDoctors(nextList);
+          saveCachedDoctors(nextList);
           if (editingDoctorId === id) {
             setEditingDoctorId(null);
             setDoctorForm({});
           }
           triggerFeedback(`🗑️ Removed "${name}" from dentist directory.`);
+          if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'doctors', data: nextList } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to delete doctor from server.');
@@ -1008,13 +1038,16 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         });
 
         if (res.ok) {
-          setTimings((prev) => ({
-            ...prev,
-            activeSlots: prev.activeSlots.filter((s) => s !== slot),
-            disabledSlots: (prev.disabledSlots || []).filter((s) => s !== slot),
-          }));
+          const updatedTimings = {
+            ...timings,
+            activeSlots: timings.activeSlots.filter((s) => s !== slot),
+            disabledSlots: (timings.disabledSlots || []).filter((s) => s !== slot),
+          };
+          setTimings(updatedTimings);
+          saveCachedTimings(updatedTimings);
           triggerFeedback(`🗑️ Removed appointment slot ${name}.`);
           if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'timings', data: updatedTimings } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to delete time slot from server.');
@@ -1023,9 +1056,13 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
         const res = await fetch('/api/clinic-timings/reset-defaults', { method: 'POST' });
         if (res.ok) {
           const data = await res.json();
-          if (data.data) setTimings(data.data);
+          if (data.data) {
+            setTimings(data.data);
+            saveCachedTimings(data.data);
+          }
           triggerFeedback('🔄 Reset store operating hours & appointment slots to defaults.');
           if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'timings' } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to reset clinic timings.');
@@ -1036,11 +1073,17 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           const data = await res.json();
           setTreatments(data.treatments);
           setDoctors(data.doctors);
-          if (data.timings) setTimings(data.timings);
+          saveCachedTreatments(data.treatments);
+          saveCachedDoctors(data.doctors);
+          if (data.timings) {
+            setTimings(data.timings);
+            saveCachedTimings(data.timings);
+          }
           setEditingTreatmentId(null);
           setEditingDoctorId(null);
           triggerFeedback('🔄 Reset all pricing, doctor directory, and store timings to defaults.');
           if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'all' } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to reset defaults.');
@@ -1053,6 +1096,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           const data = await res.json();
           if (data.data) {
             setBranches(data.data);
+            saveCachedBranches(data.data);
             const nextBranch = data.data[0];
             if (nextBranch) {
               setSelectedBranchId(nextBranch.id);
@@ -1061,6 +1105,7 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           }
           triggerFeedback(`🗑️ Removed branch "${name}".`);
           if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'branches', data: data.data } }));
           fetchAllAdminData();
         } else {
           const data = await res.json();
@@ -1072,11 +1117,13 @@ export const AdminCornerModal: React.FC<AdminCornerModalProps> = ({
           const data = await res.json();
           if (data.data) {
             setBranches(data.data);
+            saveCachedBranches(data.data);
             setSelectedBranchId(data.data[0].id);
             setBranchForm({ ...data.data[0] });
           }
           triggerFeedback('🔄 Reset clinic branches to standard 3 locations.');
           if (onDataUpdated) onDataUpdated();
+          window.dispatchEvent(new CustomEvent('sdc_admin_data_updated', { detail: { type: 'branches', data: data.data } }));
           fetchAllAdminData();
         } else {
           setErrorMessage('Failed to reset branches to defaults.');

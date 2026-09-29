@@ -3557,16 +3557,18 @@ app.get('/api/treatments', (req, res) => {
     if (bId) {
       const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === bId);
       if (rawHier) {
+        const legacyServiceIds = new Set(['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
         if (docId) {
           const rawDentist = rawHier.dentists.find((d) => d.dentistId === docId);
           if (rawDentist) {
             const allowed = new Set(rawDentist.serviceIds);
-            treatments = treatments.filter((t) => allowed.has(t.id));
+            // Allow assigned services plus any custom treatments created by admin
+            treatments = treatments.filter((t) => allowed.has(t.id) || !legacyServiceIds.has(t.id));
           }
         } else {
           const allowed = new Set<string>();
           rawHier.dentists.forEach((d) => d.serviceIds.forEach((sid) => allowed.add(sid)));
-          treatments = treatments.filter((t) => allowed.has(t.id));
+          treatments = treatments.filter((t) => allowed.has(t.id) || !legacyServiceIds.has(t.id));
         }
       }
     }
@@ -3745,7 +3747,9 @@ app.get('/api/doctors', (req, res) => {
       const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId.trim());
       if (rawHier) {
         const allowedIds = new Set(rawHier.dentists.map((d) => d.dentistId));
-        doctors = doctors.filter((doc) => allowedIds.has(doc.id));
+        const legacyIds = new Set(['doc1', 'doc2', 'doc3', 'doc4']);
+        // Include assigned dentists plus any new custom doctors created by clinic admin
+        doctors = doctors.filter((doc) => allowedIds.has(doc.id) || !legacyIds.has(doc.id));
       }
     }
 
@@ -4176,56 +4180,106 @@ app.get('/api/branch-hierarchy', (req, res) => {
   }
 });
 
-// Dentists at a specific branch: Branch -> Dentists
+// Dentists at a specific branch: Branch -> Dentists (Supports default and custom branches)
 app.get('/api/branches/:branchId/dentists', (req, res) => {
   try {
     const { branchId } = req.params;
-    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
-    if (!rawHier) {
-      return res.status(404).json({ success: false, error: 'Branch not found' });
-    }
     const allDoctors = getOrInitDoctors();
-    const allowedDocIds = new Set(rawHier.dentists.map((d) => d.dentistId));
-    const branchDoctors = allDoctors.filter((doc) => allowedDocIds.has(doc.id));
+    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
+
+    let branchDoctors: DoctorItem[] = [];
+    if (rawHier) {
+      const allowedDocIds = new Set(rawHier.dentists.map((d) => d.dentistId));
+      branchDoctors = allDoctors.filter((doc) => allowedDocIds.has(doc.id));
+      // Include any custom doctors added via Admin
+      const legacyIds = new Set(['doc1', 'doc2', 'doc3', 'doc4']);
+      const customDoctors = allDoctors.filter((doc) => !legacyIds.has(doc.id));
+      customDoctors.forEach((cd) => {
+        if (!branchDoctors.some((d) => d.id === cd.id)) {
+          branchDoctors.push(cd);
+        }
+      });
+    } else {
+      // For any branch added in Admin, all active doctors are available
+      branchDoctors = allDoctors;
+    }
+
+    if (branchDoctors.length === 0) {
+      branchDoctors = allDoctors;
+    }
+
     res.json({ success: true, branchId, data: branchDoctors, total: branchDoctors.length });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch branch dentists' });
   }
 });
 
-// Services for a specific dentist at a specific branch: Branch -> Dentists -> Services
-app.get('/api/branches/:branchId/dentists/:dentistId/services', (req, res) => {
+// Services for a specific dentist at a specific branch: Branch -> Dentists -> Services / Treatments
+const handleDentistServicesQuery = (req: any, res: any) => {
   try {
-    const { branchId, dentistId } = req.params;
-    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
-    if (!rawHier) {
-      return res.status(404).json({ success: false, error: 'Branch not found' });
-    }
-    const rawDentist = rawHier.dentists.find((d) => d.dentistId === dentistId);
-    if (!rawDentist) {
-      return res.status(404).json({ success: false, error: 'Dentist not available at this branch' });
-    }
+    const branchId = req.params.branchId;
+    const dentistId = req.params.dentistId || req.params.doctorId;
     const allTreatments = getOrInitTreatments();
-    const allowedServiceIds = new Set(rawDentist.serviceIds);
-    const dentistServices = allTreatments.filter((t) => allowedServiceIds.has(t.id));
+    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
+
+    let dentistServices: TreatmentItem[] = [];
+    if (rawHier) {
+      const rawDentist = rawHier.dentists.find((d) => d.dentistId === dentistId);
+      if (rawDentist) {
+        const allowedServiceIds = new Set(rawDentist.serviceIds);
+        dentistServices = allTreatments.filter((t) => allowedServiceIds.has(t.id));
+        // Also include custom treatments created by admin
+        const legacyServiceIds = new Set(['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
+        const customTreatments = allTreatments.filter((t) => !legacyServiceIds.has(t.id));
+        customTreatments.forEach((ct) => {
+          if (!dentistServices.some((t) => t.id === ct.id)) {
+            dentistServices.push(ct);
+          }
+        });
+      } else {
+        // Custom or newly added dentist: all treatments available
+        dentistServices = allTreatments;
+      }
+    } else {
+      // Custom branch: all treatments available
+      dentistServices = allTreatments;
+    }
+
+    if (dentistServices.length === 0) {
+      dentistServices = allTreatments;
+    }
+
     res.json({ success: true, branchId, dentistId, data: dentistServices, total: dentistServices.length });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch dentist services' });
   }
-});
+};
+
+app.get('/api/branches/:branchId/dentists/:dentistId/services', handleDentistServicesQuery);
+app.get('/api/branches/:branchId/dentists/:dentistId/treatments', handleDentistServicesQuery);
+app.get('/api/branches/:branchId/doctors/:doctorId/treatments', handleDentistServicesQuery);
 
 // All distinct services available at a branch
 app.get('/api/branches/:branchId/services', (req, res) => {
   try {
     const { branchId } = req.params;
-    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
-    if (!rawHier) {
-      return res.status(404).json({ success: false, error: 'Branch not found' });
-    }
-    const serviceIds = new Set<string>();
-    rawHier.dentists.forEach((d) => d.serviceIds.forEach((sid) => serviceIds.add(sid)));
     const allTreatments = getOrInitTreatments();
-    const branchServices = allTreatments.filter((t) => serviceIds.has(t.id));
+    const rawHier = RAW_BRANCH_HIERARCHY.find((h) => h.branchId === branchId);
+
+    let branchServices: TreatmentItem[] = [];
+    if (rawHier) {
+      const serviceIds = new Set<string>();
+      rawHier.dentists.forEach((d) => d.serviceIds.forEach((sid) => serviceIds.add(sid)));
+      const legacyServiceIds = new Set(['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
+      branchServices = allTreatments.filter((t) => serviceIds.has(t.id) || !legacyServiceIds.has(t.id));
+    } else {
+      branchServices = allTreatments;
+    }
+
+    if (branchServices.length === 0) {
+      branchServices = allTreatments;
+    }
+
     res.json({ success: true, branchId, data: branchServices, total: branchServices.length });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch branch services' });
@@ -5373,6 +5427,61 @@ app.post('/api/bookings/:ref/status', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to update status' });
+  }
+});
+
+// 6.5 Update / Edit Patient Appointment Record
+app.put('/api/bookings/:ref', (req, res) => {
+  try {
+    const ref = req.params.ref.toUpperCase();
+    const updateData = req.body;
+    const records = getOrInitExcelFile();
+    const index = records.findIndex((r) => r.bookingRef.toUpperCase() === ref);
+    if (index === -1) {
+      return res.status(404).json({ success: false, error: 'Booking reference not found' });
+    }
+
+    records[index] = {
+      ...records[index],
+      ...updateData,
+      bookingRef: ref, // Preserve original bookingRef
+    };
+
+    writeExcelFile(records);
+    res.json({
+      success: true,
+      message: `Booking ${ref} updated successfully`,
+      data: records[index],
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update booking' });
+  }
+});
+
+app.patch('/api/bookings/:ref', (req, res) => {
+  try {
+    const ref = req.params.ref.toUpperCase();
+    const updateData = req.body;
+    const records = getOrInitExcelFile();
+    const index = records.findIndex((r) => r.bookingRef.toUpperCase() === ref);
+    if (index === -1) {
+      return res.status(404).json({ success: false, error: 'Booking reference not found' });
+    }
+
+    records[index] = {
+      ...records[index],
+      ...updateData,
+      bookingRef: ref,
+    };
+
+    writeExcelFile(records);
+    res.json({
+      success: true,
+      message: `Booking ${ref} patched successfully`,
+      data: records[index],
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to patch booking' });
   }
 });
 
@@ -7885,7 +7994,7 @@ app.get('/api/ai/status', (req, res) => {
   res.json({
     success: true,
     isConfigured: isGeminiConfigured(),
-    model: 'gemini-3.8-flash',
+    model: 'gemini-2.5-flash',
     features: [
       'AI Appointment Assistance & Triage',
       'Automated Patient Responses (WhatsApp / Reception Desk)',

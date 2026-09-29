@@ -39,28 +39,38 @@ export const TreatmentStep: React.FC<TreatmentStepProps> = ({
   const [advancingTreatmentId, setAdvancingTreatmentId] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsLoading(true);
-    fetch(`/api/branches/${branchId}/dentists/${doctorId}/treatments`)
-      .then((res) => {
-        if (!res.ok) {
-          return fetch(`/api/treatments?branchId=${branchId}&doctorId=${doctorId}`).then((r) => r.json());
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
-          setTreatmentsList(data.data);
-        } else {
+    const loadTreatments = () => {
+      setIsLoading(true);
+      fetch(`/api/branches/${branchId}/dentists/${doctorId}/treatments`)
+        .then((res) => {
+          if (!res.ok) {
+            return fetch(`/api/treatments?branchId=${branchId}&doctorId=${doctorId}`).then((r) => r.json());
+          }
+          return res.json();
+        })
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+            setTreatmentsList(data.data);
+          } else {
+            setTreatmentsList(getServicesForDentist(branchId, doctorId));
+          }
+        })
+        .catch((err) => {
+          console.warn(`Fallback to local branch hierarchy services for ${branchId}/${doctorId}:`, err);
           setTreatmentsList(getServicesForDentist(branchId, doctorId));
-        }
-      })
-      .catch((err) => {
-        console.warn(`Fallback to local branch hierarchy services for ${branchId}/${doctorId}:`, err);
-        setTreatmentsList(getServicesForDentist(branchId, doctorId));
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    };
+
+    loadTreatments();
+
+    const handleAdminEvent = () => loadTreatments();
+    window.addEventListener('sdc_admin_data_updated', handleAdminEvent);
+    return () => {
+      window.removeEventListener('sdc_admin_data_updated', handleAdminEvent);
+    };
   }, [branchId, doctorId, refreshTrigger]);
 
   const filteredTreatments = useMemo(() => {

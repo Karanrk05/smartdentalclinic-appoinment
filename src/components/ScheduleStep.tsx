@@ -117,16 +117,29 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
       .catch(() => {});
   }, [selectedDate, selectedDoctor, refreshTrigger, localRefreshCounter]);
 
-  // Fetch clinic timings from server
+  // Fetch clinic timings from server and listen for live admin timing updates
   useEffect(() => {
-    fetch('/api/clinic-timings', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && data.data) {
-          setClinicTimings(data.data);
-        }
-      })
-      .catch(() => {});
+    const loadTimings = () => {
+      fetch('/api/clinic-timings', { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.data) {
+            setClinicTimings(data.data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    loadTimings();
+
+    const handleAdminEvent = () => {
+      loadTimings();
+      setLocalRefreshCounter((c) => c + 1);
+    };
+    window.addEventListener('sdc_admin_data_updated', handleAdminEvent);
+    return () => {
+      window.removeEventListener('sdc_admin_data_updated', handleAdminEvent);
+    };
   }, [refreshTrigger, localRefreshCounter]);
 
   const handlePrevMonth = () => {

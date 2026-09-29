@@ -194,6 +194,17 @@ export default function App() {
         if (data && data.success && Array.isArray(data.data)) {
           setTreatmentsList(data.data);
           saveCachedTreatments(data.data);
+          // Sync booking.treatment if it was edited or deleted
+          setBooking((prev) => {
+            if (!prev.treatment) return prev;
+            const updated = data.data.find((t: Treatment) => t.id === prev.treatment?.id);
+            if (updated) {
+              return { ...prev, treatment: updated };
+            } else {
+              // Deleted from catalog
+              return { ...prev, treatment: null };
+            }
+          });
           // Sync service catalog to Firebase Firestore
           syncServicesToFirestore(data.data).catch(() => {});
         }
@@ -206,6 +217,17 @@ export default function App() {
         if (data && data.success && Array.isArray(data.data)) {
           setDoctorsList(data.data);
           saveCachedDoctors(data.data);
+          // Sync booking.doctor if it was edited or deleted
+          setBooking((prev) => {
+            if (!prev.doctor) return prev;
+            const updated = data.data.find((d: Doctor) => d.id === prev.doctor?.id);
+            if (updated) {
+              return { ...prev, doctor: updated };
+            } else {
+              // Deleted from catalog
+              return { ...prev, doctor: null, treatment: null };
+            }
+          });
         }
       })
       .catch(() => {});
@@ -213,9 +235,21 @@ export default function App() {
     fetch('/api/branches')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && data.success && Array.isArray(data.data)) {
-          setBranchesList(data.data);
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+          const active = data.data.filter((b: ClinicBranch) => b.isActive !== false);
+          setBranchesList(active);
           saveCachedBranches(data.data);
+          // Sync booking.branch if it was edited or deleted
+          setBooking((prev) => {
+            if (!prev.branch) return { ...prev, branch: active[0] || null };
+            const updated = active.find((b: ClinicBranch) => b.id === prev.branch?.id);
+            if (updated) {
+              return { ...prev, branch: updated };
+            } else {
+              // Deleted branch: fallback to first active branch
+              return { ...prev, branch: active[0] || null, doctor: null, treatment: null };
+            }
+          });
         }
       })
       .catch(() => {});
@@ -333,12 +367,19 @@ export default function App() {
     };
     window.addEventListener('sdc_trigger_firebase_auto_sync', handleTriggerSync);
 
+    // 5. Admin data live change listener to immediately refresh main page
+    const handleAdminBroadcast = () => {
+      setDataRefreshCounter((c) => c + 1);
+    };
+    window.addEventListener('sdc_admin_data_updated', handleAdminBroadcast);
+
     return () => {
       isMounted = false;
       clearTimeout(initialTimer);
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('sdc_trigger_firebase_auto_sync', handleTriggerSync);
+      window.removeEventListener('sdc_admin_data_updated', handleAdminBroadcast);
     };
   }, []);
 

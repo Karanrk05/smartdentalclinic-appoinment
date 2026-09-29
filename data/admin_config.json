@@ -1,8 +1,43 @@
 {
   "pin": "1234",
-  "lastUpdated": "2026-09-17T07:53:28.022Z",
+  "lastUpdated": "2026-09-28T08:24:48.975Z",
   "lastUpdatedBy": "Admin Corner",
   "changeLog": [
+    {
+      "id": "CHG_1790583888975",
+      "action": "DELETE_TREATMENT",
+      "target": "Laser Gum Whitening Test",
+      "timestamp": "2026-09-28 08:24:48",
+      "details": "Removed treatment from directory"
+    },
+    {
+      "id": "CHG_1790583873066",
+      "action": "ADD_TREATMENT",
+      "target": "Laser Gum Whitening Test",
+      "timestamp": "2026-09-28 08:24:33",
+      "details": "Added new service at ₹2,500"
+    },
+    {
+      "id": "CHG_1790581882475",
+      "action": "AUTOMATED_WEEKLY_BACKUP",
+      "target": "Secondary JSON Storage (patients_weekly_backup.json)",
+      "timestamp": "2026-09-28 07:51:22",
+      "details": "Weekly backup routine synced: saved 4 patient record(s) to secondary JSON storage (ExcelDatabaseModal Open (Weekly Routine))"
+    },
+    {
+      "id": "LOG_NOTIF_1790581119238",
+      "action": "INSTANT_NOTIFICATION_DISPATCH",
+      "target": "SCMX2V4",
+      "timestamp": "2026-09-28T07:38:38.880Z",
+      "details": "Dispatched instant dual notifications (WhatsApp, SMS & Browser Push fallback) to Patient (Karan Kshirsagar · 9527050086) and Doctor (Dr. Vikram Shah · +91 98201 55441)."
+    },
+    {
+      "id": "LOG_NOTIF_1790581118640",
+      "action": "INSTANT_NOTIFICATION_DISPATCH",
+      "target": "SCJXXRQ",
+      "timestamp": "2026-09-28T07:38:38.234Z",
+      "details": "Dispatched instant dual notifications (WhatsApp, SMS & Browser Push fallback) to Patient (piu  kadam · 12345674) and Doctor (Dr. Priya Mehta · +91 98202 66552)."
+    },
     {
       "id": "CHG_1789631608023",
       "action": "AUTOMATED_WEEKLY_BACKUP",
